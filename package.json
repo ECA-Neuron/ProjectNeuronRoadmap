@@ -4,8 +4,7 @@
   "private": true,
   "description": "Neuron ERP Dashboard — Notion-powered project tracking",
   "scripts": {
-    "install:all": "npm install --prefix server && npm install --prefix client",
-    "build": "npm run build --prefix client",
+    "build": "cd server && npm install && cd ../client && npm install && npm run build",
     "start": "node server/index.js"
   },
   "engines": {
