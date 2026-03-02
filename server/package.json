@@ -1,0 +1,14 @@
+{
+  "name": "erp-dashboard-server",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@notionhq/client": "^2.3.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.6.1",
+    "express": "^4.22.1"
+  }
+}

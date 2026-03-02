@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: neuron-erp-dashboard
+    runtime: node
+    buildCommand: npm run install:all && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NOTION_SECRET
+        sync: false
+      - key: NOTION_ROADMAP_DB_ID
+        sync: false
+      - key: NOTION_WORKSTREAMS_DB_ID
+        sync: false
+      - key: NOTION_THIRD_DB_ID
+        sync: false
