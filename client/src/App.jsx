@@ -43,13 +43,17 @@ export default function App() {
   const fetchRoadmap = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/roadmap`);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || res.statusText || 'Failed to fetch');
-      }
-      const json = await res.json();
+    const MAX_RETRIES = 3;
+    let lastErr = null;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
+        const res = await fetch(`${API_BASE}/roadmap`);
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || res.statusText || 'Failed to fetch');
+        }
+        const json = await res.json();
       setData(json);
       const rows = json.roadmapRows ?? [];
       setTaskSeries(buildTaskSeriesFromMerged(rows));
@@ -62,12 +66,17 @@ export default function App() {
       setRebaselinedIds(new Set(changedIds));
       const { allDateChanges } = detectAllLevelDateChanges(rows);
       setDateChanges(allDateChanges);
-    } catch (e) {
-      setError(e.message);
-      setData(null);
-    } finally {
-      setLoading(false);
+        lastErr = null;
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
     }
+    if (lastErr) {
+      setError(lastErr.message);
+      setData(null);
+    }
+    setLoading(false);
   }, []);
 
   useEffect(() => { fetchRoadmap(); }, [fetchRoadmap]);
