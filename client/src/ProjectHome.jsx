@@ -152,7 +152,77 @@ function OffTrackPanel({ offTrack, lateBlockerSummary }) {
   );
 }
 
-export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigateToTask }) {
+function OpenIssuesPanel({ openIssues, onNavigateToIssues }) {
+  const affectedWorkstreams = useMemo(() => {
+    const map = {};
+    for (const i of openIssues) {
+      const ws = i.workstream || 'Unassigned';
+      if (!map[ws]) map[ws] = [];
+      map[ws].push(i);
+    }
+    return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
+  }, [openIssues]);
+
+  const affectedDeliverables = useMemo(() => {
+    const set = new Set();
+    for (const i of openIssues) if (i.deliverable) set.add(i.deliverable);
+    return [...set].sort();
+  }, [openIssues]);
+
+  const affectedTasks = useMemo(() => {
+    const set = new Set();
+    for (const i of openIssues) if (i.relatedTaskName) set.add(i.relatedTaskName);
+    return [...set].sort();
+  }, [openIssues]);
+
+  const highCount = openIssues.filter(i => {
+    const s = (i.severity ?? '').toLowerCase();
+    return s.includes('high') || s.includes('critical');
+  }).length;
+
+  if (openIssues.length === 0) return null;
+
+  return (
+    <div className="open-issues-summary">
+      <div className="off-track-header">
+        <span className="off-track-icon" style={{ color: 'var(--amber)' }}>&#9888;</span>
+        <span className="off-track-title">Open Issues</span>
+        <span className="open-issues-total">{openIssues.length} issue{openIssues.length !== 1 ? 's' : ''}</span>
+        {highCount > 0 && <span className="open-issues-high">{highCount} High</span>}
+      </div>
+      <OffTrackSection
+        label="Affected Workstream"
+        count={affectedWorkstreams.length}
+        items={affectedWorkstreams.map(([ws, issues]) => `${ws} (${issues.length} issue${issues.length !== 1 ? 's' : ''})`)}
+      />
+      <OffTrackSection
+        label="Affected Deliverable"
+        count={affectedDeliverables.length}
+        items={affectedDeliverables}
+      />
+      <OffTrackSection
+        label="Affected Task"
+        count={affectedTasks.length}
+        items={affectedTasks}
+      />
+      <OffTrackSection
+        label="Issue"
+        count={openIssues.length}
+        items={openIssues.map(i => ({
+          name: `${i.name || i.description || 'Unnamed'} — ${(i.severity || 'Unspecified')}${i.workstream ? ` · ${i.workstream}` : ''}`,
+          url: i.url
+        }))}
+      />
+      {onNavigateToIssues && (
+        <button type="button" className="open-issues-view-btn" onClick={onNavigateToIssues}>
+          View all issues →
+        </button>
+      )}
+    </div>
+  );
+}
+
+export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigateToTask, onNavigateToIssues }) {
   const rows = data?.roadmapRows ?? [];
   const hierarchy = data?.hierarchy ?? [];
   const openIssues = (data?.openIssues ?? []).filter(
@@ -341,6 +411,8 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
       {totalOffTrack > 0 && (
         <OffTrackPanel offTrack={offTrack} lateBlockerSummary={lateBlockerSummary} />
       )}
+
+      <OpenIssuesPanel openIssues={openIssues} onNavigateToIssues={onNavigateToIssues} />
 
       <div className="home-delivery">
         <div className="delivery-row">

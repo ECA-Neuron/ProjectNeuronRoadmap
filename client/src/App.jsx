@@ -261,6 +261,7 @@ export default function App() {
               data={data}
               taskSeries={taskSeries}
               onNavigateToTask={navigateToTask}
+              onNavigateToIssues={() => { setSelected(null); setActivePage('issues'); }}
               onSelectNode={(node) => {
                 const ws = (data.hierarchy ?? []).find(w => w.name === node.name);
                 if (ws) {
