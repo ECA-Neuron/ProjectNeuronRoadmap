@@ -42,16 +42,51 @@ if (fs.existsSync(clientDist)) {
   app.use(express.static(clientDist));
 }
 
+const CACHE_TTL_MS = 60 * 1000;
+let cache = { data: null, timestamp: 0, refreshing: false };
+
+async function refreshCache() {
+  if (cache.refreshing) return;
+  cache.refreshing = true;
+  const start = Date.now();
+  try {
+    const data = await getMergedRoadmap();
+    cache.data = data;
+    cache.timestamp = Date.now();
+    console.log(`Cache refreshed in ${Date.now() - start}ms`);
+  } catch (err) {
+    console.error('Cache refresh error:', err.message);
+  } finally {
+    cache.refreshing = false;
+  }
+}
+
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true });
+  res.json({ ok: true, cached: !!cache.data, cacheAge: cache.data ? Date.now() - cache.timestamp : null });
 });
 
 app.get('/api/roadmap', async (req, res) => {
+  const forceRefresh = req.query.refresh === 'true';
+  const cacheAge = Date.now() - cache.timestamp;
+
+  if (cache.data && !forceRefresh && cacheAge < CACHE_TTL_MS) {
+    return res.json(cache.data);
+  }
+
+  if (cache.data && cacheAge >= CACHE_TTL_MS) {
+    res.json(cache.data);
+    refreshCache();
+    return;
+  }
+
   try {
     const data = await getMergedRoadmap();
+    cache.data = data;
+    cache.timestamp = Date.now();
     res.json(data);
   } catch (err) {
     console.error('Roadmap API error:', err);
+    if (cache.data) return res.json(cache.data);
     res.status(500).json({
       error: err.message || 'Failed to fetch roadmap',
       code: err.code,
@@ -98,7 +133,8 @@ if (fs.existsSync(clientDist)) {
 app.listen(PORT, () => {
   console.log(`ERP Dashboard API running at http://localhost:${PORT}`);
   if (process.env.NOTION_SECRET) {
-    console.log('NOTION_SECRET is set');
+    console.log('NOTION_SECRET is set — pre-warming cache...');
+    refreshCache();
   } else {
     console.warn('WARNING: NOTION_SECRET is not set. Add it to .env in the erp-dashboard folder and restart.');
   }

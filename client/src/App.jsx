@@ -40,7 +40,7 @@ export default function App() {
   const [filterOpenIssues, setFilterOpenIssues] = useState(false);
   const [activePage, setActivePage] = useState('home');
 
-  const fetchRoadmap = useCallback(async () => {
+  const fetchRoadmap = useCallback(async (forceRefresh = false) => {
     setLoading(true);
     setError(null);
     const MAX_RETRIES = 3;
@@ -48,7 +48,8 @@ export default function App() {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
       try {
         if (attempt > 0) await new Promise(r => setTimeout(r, 2000 * attempt));
-        const res = await fetch(`${API_BASE}/roadmap`);
+        const url = forceRefresh ? `${API_BASE}/roadmap?refresh=true` : `${API_BASE}/roadmap`;
+        const res = await fetch(url);
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));
           throw new Error(err.error || res.statusText || 'Failed to fetch');
@@ -197,7 +198,7 @@ export default function App() {
         <header className="app-header">
           <h1>Neuron ERP Dashboard</h1>
           <div className="header-actions">
-            <button type="button" className="btn-refresh" onClick={fetchRoadmap} disabled={loading}>
+            <button type="button" className="btn-refresh" onClick={() => fetchRoadmap(true)} disabled={loading}>
               {loading ? 'Loading...' : 'Refresh'}
           </button>
           <button type="button" className="btn-theme" onClick={toggleTheme} title="Toggle theme">
