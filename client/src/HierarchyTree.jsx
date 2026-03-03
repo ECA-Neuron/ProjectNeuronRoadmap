@@ -20,7 +20,7 @@ function NotionLink({ url }) {
   );
 }
 
-export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselinedTaskKeys, filterLevel, filterWorkstream }) {
+export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselinedTaskKeys, filterLevel, filterWorkstream, filterDeliverable }) {
   const [expanded, setExpanded] = useState({ workstream: {}, epic: {}, deliverable: {} });
 
   const toggleAndSelect = (level, key, selectPayload) => {
@@ -32,7 +32,8 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
     onSelect(selectPayload);
   };
 
-  const isExpanded = (level, key) => expanded[level]?.[key] === true;
+  const autoExpand = !!filterDeliverable;
+  const isExpanded = (level, key) => autoExpand || expanded[level]?.[key] === true;
   const isSelected = (type, key) => selected?.type === type && selected?.key === key;
 
   if (!hierarchy?.length) return <p className="hierarchy-empty">No hierarchy data. Check Notion connection.</p>;

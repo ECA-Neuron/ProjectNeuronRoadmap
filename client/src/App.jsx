@@ -261,11 +261,6 @@ export default function App() {
             </div>
           </div>
           <div className="sidebar-filters">
-            <select className="filter-select" value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
-              <option value="">All levels</option>
-              <option value="deliverable">Deliverables</option>
-              <option value="task">Tasks</option>
-            </select>
             <select className="filter-select" value={filterWorkstream} onChange={e => { setFilterWorkstream(e.target.value); setFilterDeliverable(''); }}>
               <option value="">All workstreams</option>
               {workstreamNames.map(name => <option key={name} value={name}>{name}</option>)}
@@ -280,6 +275,11 @@ export default function App() {
               <option value="">All assignees</option>
               {assigneeNames.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
+            <select className="filter-select" value={filterLevel} onChange={e => setFilterLevel(e.target.value)}>
+              <option value="">All levels</option>
+              <option value="deliverable">Deliverables</option>
+              <option value="task">Tasks</option>
+            </select>
             <label className="filter-toggle">
               <input type="checkbox" checked={filterOpenIssues} onChange={e => setFilterOpenIssues(e.target.checked)} />
               <span className="filter-toggle-label">Open Issues</span>
@@ -292,6 +292,7 @@ export default function App() {
             rebaselinedTaskKeys={rebaselinedIds}
             filterLevel={filterLevel}
             filterWorkstream={filterWorkstream}
+            filterDeliverable={filterDeliverable}
           />
         </aside>
         <main className="main">
