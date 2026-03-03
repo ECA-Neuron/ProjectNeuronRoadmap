@@ -89,7 +89,10 @@ export default function App() {
 
   const deliverableNames = useMemo(() => {
     const names = new Set();
-    for (const ws of (data?.hierarchy ?? [])) {
+    const workstreams = filterWorkstream
+      ? (data?.hierarchy ?? []).filter(ws => ws.name === filterWorkstream)
+      : (data?.hierarchy ?? []);
+    for (const ws of workstreams) {
       for (const epic of (ws.epics ?? [])) {
         for (const del of (epic.deliverables ?? [])) {
           if (del.name && del.name !== 'Unknown') names.add(del.name);
@@ -97,7 +100,7 @@ export default function App() {
       }
     }
     return [...names].sort();
-  }, [data]);
+  }, [data, filterWorkstream]);
 
   const assigneeNames = useMemo(() => {
     const names = new Set();
@@ -263,7 +266,7 @@ export default function App() {
               <option value="deliverable">Deliverables</option>
               <option value="task">Tasks</option>
             </select>
-            <select className="filter-select" value={filterWorkstream} onChange={e => setFilterWorkstream(e.target.value)}>
+            <select className="filter-select" value={filterWorkstream} onChange={e => { setFilterWorkstream(e.target.value); setFilterDeliverable(''); }}>
               <option value="">All workstreams</option>
               {workstreamNames.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
