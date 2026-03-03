@@ -146,17 +146,13 @@ async function getMergedRoadmap() {
       ? (parseFloat(trimStr(latestProgress['Percent Complete'] ?? '0')) || 0)
       : 0;
 
-    const workstream = trimStr(wsRow.WorkStream ?? wsRow.workstream ?? wsRow.GreatGrandParent ?? 'Unknown');
-    const epic = trimStr(wsRow.Grandparent ?? 'Unknown');
-    let deliverable = trimStr(wsRow['Deliverable Level'] ?? '');
-    if (!deliverable || deliverable === 'Unknown') {
-      const parentId = wsRow['Parent (L1)'] ?? wsRow['__rel_Parent (L1)']?.[0] ?? null;
-      if (parentId) {
-        const parentRow = wsById.get(parentId);
-        if (parentRow) deliverable = trimStr(parentRow.Name ?? parentRow.name ?? 'Unknown');
-      }
-    }
-    if (!deliverable) deliverable = 'Unknown';
+    const parentId = wsRow['Parent (L1)'] ?? wsRow['__rel_Parent (L1)']?.[0] ?? null;
+    const parentRow = parentId ? wsById.get(parentId) : null;
+    const grandparentName = trimStr(wsRow.Grandparent ?? '');
+
+    const deliverable = (parentRow ? trimStr(parentRow.Name ?? parentRow.name ?? '') : '') || trimStr(wsRow['Deliverable Level'] ?? '') || 'Unknown';
+    const epic = grandparentName || trimStr(wsRow.Grandparent ?? '') || 'Unknown';
+    const workstream = trimStr(wsRow.GreatGrandParent ?? wsRow.WorkStream ?? wsRow.workstream ?? '') || 'Unknown';
 
     const assignee = trimStr(wsRow.Assign ?? wsRow.assign ?? wsRow.Assignee ?? wsRow.assignee ?? '') || 'Unassigned';
 
