@@ -148,7 +148,15 @@ async function getMergedRoadmap() {
 
     const workstream = trimStr(wsRow.WorkStream ?? wsRow.workstream ?? wsRow.GreatGrandParent ?? 'Unknown');
     const epic = trimStr(wsRow.Grandparent ?? 'Unknown');
-    const deliverable = trimStr(wsRow['Deliverable Level'] ?? 'Unknown');
+    let deliverable = trimStr(wsRow['Deliverable Level'] ?? '');
+    if (!deliverable || deliverable === 'Unknown') {
+      const parentId = wsRow['Parent (L1)'] ?? wsRow['__rel_Parent (L1)']?.[0] ?? null;
+      if (parentId) {
+        const parentRow = wsById.get(parentId);
+        if (parentRow) deliverable = trimStr(parentRow.Name ?? parentRow.name ?? 'Unknown');
+      }
+    }
+    if (!deliverable) deliverable = 'Unknown';
 
     const assignee = trimStr(wsRow.Assign ?? wsRow.assign ?? wsRow.Assignee ?? wsRow.assignee ?? '') || 'Unassigned';
 
