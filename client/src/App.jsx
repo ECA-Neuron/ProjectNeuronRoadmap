@@ -37,6 +37,7 @@ export default function App() {
   const [filterLevel, setFilterLevel] = useState('');
   const [filterWorkstream, setFilterWorkstream] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
+  const [filterDeliverable, setFilterDeliverable] = useState('');
   const [filterOpenIssues, setFilterOpenIssues] = useState(false);
   const [activePage, setActivePage] = useState('home');
 
@@ -86,6 +87,18 @@ export default function App() {
     return (data?.hierarchy ?? []).map(ws => ws.name);
   }, [data]);
 
+  const deliverableNames = useMemo(() => {
+    const names = new Set();
+    for (const ws of (data?.hierarchy ?? [])) {
+      for (const epic of (ws.epics ?? [])) {
+        for (const del of (epic.deliverables ?? [])) {
+          if (del.name && del.name !== 'Unknown') names.add(del.name);
+        }
+      }
+    }
+    return [...names].sort();
+  }, [data]);
+
   const assigneeNames = useMemo(() => {
     const names = new Set();
     for (const row of (data?.roadmapRows ?? [])) {
@@ -126,6 +139,18 @@ export default function App() {
       })).filter(ws => ws.epics.length > 0);
     }
 
+    if (filterDeliverable) {
+      hierarchy = hierarchy.map(ws => ({
+        ...ws,
+        epics: ws.epics?.map(epic => ({
+          ...epic,
+          deliverables: epic.deliverables?.filter(del => del.name === filterDeliverable) ?? [],
+          tasks: epic.tasks?.filter(t => t.Deliverable === filterDeliverable) ?? [],
+        })).filter(epic => epic.deliverables.length > 0) ?? [],
+        tasks: ws.tasks?.filter(t => t.Deliverable === filterDeliverable) ?? [],
+      })).filter(ws => ws.epics.length > 0);
+    }
+
     if (issueTaskIds) {
       hierarchy = hierarchy.map(ws => ({
         ...ws,
@@ -142,7 +167,7 @@ export default function App() {
     }
 
     return hierarchy;
-  }, [data, filterAssignee, issueTaskIds]);
+  }, [data, filterAssignee, filterDeliverable, issueTaskIds]);
 
   const navigateToTask = useCallback((task) => {
     const key = `${task.Workstream}|${task.Epic}|${task.Deliverable}|${task.taskName}`;
@@ -241,6 +266,10 @@ export default function App() {
             <select className="filter-select" value={filterWorkstream} onChange={e => setFilterWorkstream(e.target.value)}>
               <option value="">All workstreams</option>
               {workstreamNames.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+            <select className="filter-select" value={filterDeliverable} onChange={e => setFilterDeliverable(e.target.value)}>
+              <option value="">All deliverables</option>
+              {deliverableNames.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
           </div>
           <div className="sidebar-filters">
