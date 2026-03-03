@@ -62,6 +62,7 @@ export function buildTaskSeriesFromMerged(roadmapRows) {
     const biweeklyDates = generateWeeklyDates(start, end);
     const currentPoints = task.currentPoints ?? 0;
     const pctComplete = totalPoints > 0 ? currentPoints / totalPoints : 0;
+    const isAddedScope = (task.typeOfScope ?? '').toLowerCase().includes('added');
 
     const sortedProgress = [...progressRows].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
     const progressData = sortedProgress.map(r => ({
@@ -92,8 +93,11 @@ export function buildTaskSeriesFromMerged(roadmapRows) {
         actualData.push(pt);
       }
     }
+    const originalPoints = isAddedScope ? 0 : totalPoints;
     out[key] = {
       totalPoints,
+      originalPoints,
+      isAddedScope,
       currentPoints,
       pctComplete,
       dateStarted: start,
@@ -108,13 +112,14 @@ export function buildTaskSeriesFromMerged(roadmapRows) {
 
 export function rollupBurndown(taskSeries, hierarchyNode, dateOverride) {
   const tasks = hierarchyNode.tasks ?? [];
-  if (tasks.length === 0) return { totalPoints: 0, currentPoints: 0, pctComplete: 0, actualData: [], idealLine: [], dateStarted: null, dateExpectedComplete: null, biweeklyDates: [] };
+  if (tasks.length === 0) return { totalPoints: 0, originalPoints: 0, currentPoints: 0, pctComplete: 0, actualData: [], idealLine: [], originalIdealLine: [], dateStarted: null, dateExpectedComplete: null, biweeklyDates: [] };
 
   const keys = [...new Set(tasks.map(t => taskKey(t)))];
   const seriesList = keys.map(k => taskSeries[k]).filter(Boolean);
-  if (seriesList.length === 0) return { totalPoints: 0, currentPoints: 0, pctComplete: 0, actualData: [], idealLine: [], dateStarted: null, dateExpectedComplete: null, biweeklyDates: [] };
+  if (seriesList.length === 0) return { totalPoints: 0, originalPoints: 0, currentPoints: 0, pctComplete: 0, actualData: [], idealLine: [], originalIdealLine: [], dateStarted: null, dateExpectedComplete: null, biweeklyDates: [] };
 
   const totalPoints = seriesList.reduce((s, x) => s + (x.totalPoints ?? 0), 0);
+  const originalPoints = seriesList.reduce((s, x) => s + (x.originalPoints ?? x.totalPoints ?? 0), 0);
   const currentPoints = seriesList.reduce((s, x) => s + (x.currentPoints ?? 0), 0);
   const pctComplete = totalPoints > 0 ? currentPoints / totalPoints : 0;
 
@@ -161,8 +166,11 @@ export function rollupBurndown(taskSeries, hierarchyNode, dateOverride) {
   const idealLine = dateStarted && dateExpectedComplete
     ? [{ date: dateStarted, points: totalPoints }, { date: dateExpectedComplete, points: 0 }]
     : [];
+  const originalIdealLine = dateStarted && dateExpectedComplete && originalPoints !== totalPoints
+    ? [{ date: dateStarted, points: originalPoints }, { date: dateExpectedComplete, points: 0 }]
+    : [];
 
-  return { totalPoints, currentPoints, pctComplete, actualData, idealLine, dateStarted, dateExpectedComplete, biweeklyDates };
+  return { totalPoints, originalPoints, currentPoints, pctComplete, actualData, idealLine, originalIdealLine, dateStarted, dateExpectedComplete, biweeklyDates };
 }
 
 export function isSeriesOffTrack(series) {

@@ -48,8 +48,15 @@ function CustomTooltip({ active, payload, label }) {
         {data.ideal != null && (
           <div className="chart-tooltip-row">
             <span className="chart-tooltip-dot" style={{ background: 'var(--chart-ideal)' }} />
-            <span>Ideal:</span>
+            <span>Ideal (Original):</span>
             <strong>{data.ideal.toFixed(1)}</strong>
+          </div>
+        )}
+        {data.adjustedIdeal != null && (
+          <div className="chart-tooltip-row">
+            <span className="chart-tooltip-dot" style={{ background: 'var(--chart-adjusted)' }} />
+            <span>Adjusted (w/ Added Scope):</span>
+            <strong>{data.adjustedIdeal.toFixed(1)}</strong>
           </div>
         )}
         {data.actual != null && (
@@ -104,6 +111,8 @@ export default function BurndownChart({ series, title, level, assignee, blocking
   }
 
   const totalPts = series.totalPoints ?? 0;
+  const originalPts = series.originalPoints ?? totalPts;
+  const hasAddedScope = originalPts !== totalPts;
   const currentPts = series.currentPoints ?? 0;
   const pct = series.pctComplete ?? (totalPts > 0 ? currentPts / totalPts : 0);
   const hasDate = series.dateStarted && series.dateExpectedComplete;
@@ -141,7 +150,8 @@ export default function BurndownChart({ series, title, level, assignee, blocking
 
     const isStart = t === startTs;
     const isEnd = t === endTs;
-    const idealVal = isStart ? totalPts : isEnd ? 0 : null;
+    const idealVal = isStart ? originalPts : isEnd ? 0 : null;
+    const adjustedVal = hasAddedScope ? (isStart ? totalPts : isEnd ? 0 : null) : null;
 
     let actualVal = null;
     let updates = [];
@@ -152,7 +162,7 @@ export default function BurndownChart({ series, title, level, assignee, blocking
       if (exactPt?.updates?.length > 0) updates = exactPt.updates;
     }
 
-    return { ts: t, date, ideal: idealVal, actual: actualVal, updates };
+    return { ts: t, date, ideal: idealVal, adjustedIdeal: adjustedVal, actual: actualVal, updates };
   });
   combined.sort((a, b) => a.ts - b.ts);
 
@@ -214,7 +224,10 @@ export default function BurndownChart({ series, title, level, assignee, blocking
             <Tooltip content={<CustomTooltip />} />
             <Legend wrapperStyle={{ fontSize: 12 }} />
             <ReferenceLine y={0} stroke="var(--chart-stroke)" />
-            <Line type="linear" dataKey="ideal" stroke="var(--chart-ideal)" strokeWidth={2} name="Ideal" dot={false} connectNulls />
+            <Line type="linear" dataKey="ideal" stroke="var(--chart-ideal)" strokeWidth={2} name="Ideal (Original)" dot={false} connectNulls />
+            {hasAddedScope && (
+              <Line type="linear" dataKey="adjustedIdeal" stroke="var(--chart-adjusted)" strokeWidth={2} strokeDasharray="6 3" name="Adjusted (w/ Added Scope)" dot={false} connectNulls />
+            )}
             <Line type="linear" dataKey="actual" stroke="var(--chart-actual)" strokeWidth={2} name="Actual" dot={{ r: 3, fill: 'var(--chart-actual)' }} connectNulls />
           </LineChart>
         </ResponsiveContainer>

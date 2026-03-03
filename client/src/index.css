@@ -44,6 +44,7 @@
   --chart-grid:   rgba(255,255,255,0.06);
   --chart-stroke: #475569;
   --chart-ideal:  #38bdf8;
+  --chart-adjusted: #a855f7;
   --chart-actual: #34d399;
 
   /* Elevation */
@@ -750,8 +751,9 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .risk-pill.risk-low { background: var(--green-muted); border-color: rgba(34,197,94,0.2); color: var(--green); }
 .risk-pill.risk-medium { background: var(--amber-muted); border-color: rgba(234,179,8,0.2); color: var(--amber); }
 .risk-pill.risk-high { background: var(--red-muted); border-color: rgba(239,68,68,0.2); color: var(--red); }
-.scope-pill { background: rgba(168,85,247,0.10); border-color: rgba(168,85,247,0.2); color: #a855f7; }
-[data-theme="light"] .scope-pill { color: #7c3aed; }
+.scope-pill.scope-original { background: var(--accent-muted); border-color: rgba(76,141,255,0.2); color: var(--accent); }
+.scope-pill.scope-added { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.3); color: #a855f7; font-weight: 700; }
+[data-theme="light"] .scope-pill.scope-added { color: #7c3aed; background: rgba(168,85,247,0.10); }
 .days-pill { background: var(--bg-hover); }
 .notion-pill {
   text-decoration: none;

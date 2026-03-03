@@ -140,7 +140,11 @@ export default function TaskDetail({ task, openIssues, lateBlockers }) {
         <div className="task-meta-row">
           {task.status && <span className="task-meta-pill status-pill">{task.status}</span>}
           {task.levelOfRisk && <span className={`task-meta-pill risk-pill risk-${(task.levelOfRisk).toLowerCase()}`}>{task.levelOfRisk} Risk</span>}
-          {task.typeOfScope && <span className="task-meta-pill scope-pill">{task.typeOfScope}</span>}
+          {task.typeOfScope && (
+            <span className={`task-meta-pill scope-pill ${(task.typeOfScope).toLowerCase().includes('added') ? 'scope-added' : 'scope-original'}`}>
+              {task.typeOfScope} Scope
+            </span>
+          )}
           {task.estimatedDays != null && <span className="task-meta-pill days-pill">{task.estimatedDays} Est. Day{task.estimatedDays !== 1 ? 's' : ''}</span>}
           {task.url && (
             <a href={task.url} target="_blank" rel="noopener noreferrer" className="task-meta-pill notion-pill" title="Open in Notion">

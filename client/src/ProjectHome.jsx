@@ -21,8 +21,15 @@ function ProjectTooltip({ active, payload }) {
         {data.ideal != null && (
           <div className="chart-tooltip-row">
             <span className="chart-tooltip-dot" style={{ background: 'var(--chart-ideal)' }} />
-            <span>Ideal:</span>
+            <span>Ideal (Original):</span>
             <strong>{data.ideal.toFixed(1)}</strong>
+          </div>
+        )}
+        {data.adjustedIdeal != null && (
+          <div className="chart-tooltip-row">
+            <span className="chart-tooltip-dot" style={{ background: 'var(--chart-adjusted)' }} />
+            <span>Adjusted (w/ Added Scope):</span>
+            <strong>{data.adjustedIdeal.toFixed(1)}</strong>
           </div>
         )}
         {data.actual != null && (
@@ -230,6 +237,11 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
   );
 
   const totalPoints = rows.reduce((s, t) => s + (t.totalPoints ?? 0), 0);
+  const originalTotalPoints = rows.reduce((s, t) => {
+    const isAdded = (t.typeOfScope ?? '').toLowerCase().includes('added');
+    return s + (isAdded ? 0 : (t.totalPoints ?? 0));
+  }, 0);
+  const hasAddedScope = originalTotalPoints !== totalPoints;
   const currentPoints = rows.reduce((s, t) => s + (t.currentPoints ?? 0), 0);
   const remainingPoints = Math.max(0, totalPoints - currentPoints);
   const pctComplete = totalPoints > 0 ? currentPoints / totalPoints : 0;
@@ -327,7 +339,8 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
 
       const isStart = t === startTs;
       const isEnd = t === endTs;
-      const idealVal = isStart ? totalPoints : isEnd ? 0 : null;
+      const idealVal = isStart ? originalTotalPoints : isEnd ? 0 : null;
+      const adjustedVal = hasAddedScope ? (isStart ? totalPoints : isEnd ? 0 : null) : null;
 
       let actualVal = null;
       let updates = [];
@@ -338,11 +351,11 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
         if (exactPt?.updates?.length > 0) updates = exactPt.updates;
       }
 
-      return { ts: t, date, ideal: idealVal, actual: actualVal, updates };
+      return { ts: t, date, ideal: idealVal, adjustedIdeal: adjustedVal, actual: actualVal, updates };
     });
 
-    return { combined, biweekly, ticksArr, startTs, endTs };
-  }, [taskSeries, earliestStart, deliveryDate, totalPoints]);
+    return { combined, biweekly, ticksArr, startTs, endTs, hasAddedScope };
+  }, [taskSeries, earliestStart, deliveryDate, totalPoints, originalTotalPoints, hasAddedScope]);
 
   const wsBreakdown = hierarchy.map(ws => {
     const tp = ws.totalPoints ?? 0;
@@ -463,7 +476,10 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
               <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 11 }} stroke="var(--chart-stroke)" />
               <Tooltip content={<ProjectTooltip />} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="linear" dataKey="ideal" stroke="var(--chart-ideal)" strokeWidth={2} name="Ideal" dot={false} connectNulls />
+              <Line type="linear" dataKey="ideal" stroke="var(--chart-ideal)" strokeWidth={2} name="Ideal (Original)" dot={false} connectNulls />
+              {projectBurndown.hasAddedScope && (
+                <Line type="linear" dataKey="adjustedIdeal" stroke="var(--chart-adjusted)" strokeWidth={2} strokeDasharray="6 3" name="Adjusted (w/ Added Scope)" dot={false} connectNulls />
+              )}
               <Line type="linear" dataKey="actual" stroke="var(--chart-actual)" strokeWidth={2} name="Actual" dot={{ r: 3, fill: 'var(--chart-actual)' }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
