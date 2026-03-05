@@ -29,7 +29,7 @@ for (const envPath of envPaths) {
 }
 const express = require('express');
 const cors = require('cors');
-const { queryNotionDatabase, getMergedRoadmap } = require('./notion');
+const { queryNotionDatabase, getMergedRoadmap, pushMeetingToNotion, pushPersonNotesToNotion } = require('./notion');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -121,6 +121,34 @@ app.get('/api/databases/third', async (req, res) => {
   } catch (err) {
     console.error('Third DB error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/meeting/push', async (req, res) => {
+  try {
+    const { weekLabel, weekDate, people, openIssues, notes, actionItems } = req.body;
+    if (!weekLabel || !weekDate) {
+      return res.status(400).json({ error: 'weekLabel and weekDate are required' });
+    }
+    const result = await pushMeetingToNotion({ weekLabel, weekDate, people, openIssues, notes, actionItems });
+    res.json({ success: true, url: result.url, id: result.id });
+  } catch (err) {
+    console.error('Meeting push error:', err);
+    res.status(500).json({ error: err.message || 'Failed to push meeting to Notion' });
+  }
+});
+
+app.post('/api/meeting/push-notes', async (req, res) => {
+  try {
+    const { pageId, personName, notes, actionItems } = req.body;
+    if (!pageId || !personName) {
+      return res.status(400).json({ error: 'pageId and personName are required' });
+    }
+    await pushPersonNotesToNotion({ pageId, personName, notes, actionItems });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Person notes push error:', err);
+    res.status(500).json({ error: err.message || 'Failed to push notes to Notion' });
   }
 });
 

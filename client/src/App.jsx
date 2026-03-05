@@ -6,6 +6,7 @@ import RecentUpdates from './RecentUpdates';
 import OpenIssuesBanner from './OpenIssuesBanner';
 import ProjectHome from './ProjectHome';
 import OpenIssuesPage from './OpenIssuesPage';
+import WeeklyMeeting from './WeeklyMeeting';
 import { buildTaskSeriesFromMerged, rollupBurndown, computeLateBlockers } from './burndown';
 import DateChangeBanner from './DateChangeBanner';
 import { detectAndPersistRebaselines, detectAllLevelDateChanges } from './rebaseline';
@@ -258,6 +259,15 @@ export default function App() {
                 <span className="nav-tab-icon">&#9888;</span>
                 <span className="nav-tab-label">Issues</span>
               </button>
+              <div className="nav-tab-divider" />
+              <button
+                type="button"
+                className={`nav-tab ${!selected && activePage === 'meeting' ? 'active' : ''}`}
+                onClick={() => { setSelected(null); setActivePage('meeting'); }}
+              >
+                <span className="nav-tab-icon">&#128197;</span>
+                <span className="nav-tab-label">Meeting</span>
+              </button>
             </div>
           </div>
           <div className="sidebar-filters">
@@ -299,6 +309,13 @@ export default function App() {
           {!selected && data && activePage === 'issues' && (
             <OpenIssuesPage issues={data?.openIssues ?? []} />
           )}
+          {!selected && data && activePage === 'meeting' && (
+            <WeeklyMeeting
+              data={data}
+              taskSeries={taskSeries}
+              onNavigateToTask={navigateToTask}
+            />
+          )}
           {!selected && data && activePage === 'home' && (
             <ProjectHome
               data={data}
@@ -338,6 +355,8 @@ export default function App() {
                     ? lateBlockers.filter(lb => lb.blockerTaskId === selectedTask.taskId)
                     : undefined
                 }
+                openIssues={data?.openIssues ?? []}
+                tasks={selected.tasks ?? (selectedTask ? [selectedTask] : [])}
               />
               {selected.type === 'task' && selectedTask && (
                 <TaskDetail task={selectedTask} openIssues={data?.openIssues ?? []} lateBlockers={lateBlockers} />
@@ -347,6 +366,7 @@ export default function App() {
                   tasks={selected.tasks ?? []}
                   level={selected.type}
                   onNavigateToTask={navigateToTask}
+                  openIssues={data?.openIssues ?? []}
                 />
               )}
             </>

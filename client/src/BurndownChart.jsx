@@ -98,7 +98,7 @@ function PercentBadge({ pct, totalPoints, currentPoints }) {
   );
 }
 
-export default function BurndownChart({ series, title, level, assignee, blockingItems }) {
+export default function BurndownChart({ series, title, level, assignee, blockingItems, openIssues, tasks }) {
   if (!series) {
     return (
       <div className="burndown-chart empty">
@@ -171,9 +171,39 @@ export default function BurndownChart({ series, title, level, assignee, blocking
 
   const offTrack = isSeriesOffTrack(series);
 
+  const relatedIssues = React.useMemo(() => {
+    if (!openIssues?.length || !tasks?.length) return [];
+    const taskIds = new Set(tasks.map(t => t.taskId));
+    return openIssues.filter(issue => {
+      if (!issue.relatedTaskId) return false;
+      const status = (issue.status ?? '').toLowerCase();
+      if (status === 'closed' || status === 'resolved') return false;
+      return taskIds.has(issue.relatedTaskId);
+    });
+  }, [openIssues, tasks]);
+
   return (
     <div className="burndown-chart">
       <h3>{title}</h3>
+      {relatedIssues.length > 0 && (
+        <div className="chart-issues-banner">
+          <span className="chart-issues-icon">&#9888;</span>
+          <div className="chart-issues-content">
+            <strong>{relatedIssues.length} Open Issue{relatedIssues.length > 1 ? 's' : ''}</strong>
+            <ul className="chart-issues-list">
+              {relatedIssues.map((issue, i) => (
+                <li key={i}>
+                  <span className={`chart-issue-severity chart-issue-${(issue.severity ?? '').toLowerCase()}`}>
+                    {issue.severity || 'Unknown'}
+                  </span>
+                  {' '}{issue.name || 'Unnamed issue'}
+                  {issue.assignedTo ? <span className="chart-issue-assignee"> — {issue.assignedTo}</span> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
       {offTrack && (
         <div className="off-track-flag">
           <span className="off-track-icon">&#9888;</span>

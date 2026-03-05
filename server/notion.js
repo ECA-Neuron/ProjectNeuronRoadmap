@@ -417,10 +417,224 @@ function buildHierarchy(tasks, workstreamsRows) {
   return tree;
 }
 
+async function pushMeetingToNotion({ weekLabel, weekDate, people, openIssues, notes, actionItems }) {
+  const dbId = process.env.NOTION_MEETINGS_DB_ID;
+  if (!dbId) throw new Error('NOTION_MEETINGS_DB_ID is not set');
+
+  const properties = {
+    Week: { title: [{ text: { content: weekLabel } }] },
+    'Week Date': { date: { start: weekDate } },
+  };
+
+  const page = await notion.pages.create({
+    parent: { database_id: dbId },
+    properties,
+  });
+
+  const blocks = [];
+
+  for (const person of (people ?? [])) {
+    blocks.push({
+      object: 'block',
+      type: 'heading_2',
+      heading_2: { rich_text: [{ text: { content: person.name } }] },
+    });
+
+    if (person.updates?.length > 0) {
+      for (const u of person.updates) {
+        const pctStr = `${Math.round((u.prevPct ?? 0) * 100)}% → ${Math.round((u.pct ?? 0) * 100)}%`;
+        let line = `${u.taskName}  (${pctStr})`;
+        if (u.comment) line += ` — "${u.comment}"`;
+        blocks.push({
+          object: 'block',
+          type: 'bulleted_list_item',
+          bulleted_list_item: { rich_text: [{ text: { content: line } }] },
+        });
+      }
+    }
+
+    if (person.totalBurned > 0) {
+      blocks.push({
+        object: 'block',
+        type: 'paragraph',
+        paragraph: {
+          rich_text: [{ text: { content: `Points burned: ${person.totalBurned}` }, annotations: { bold: true } }],
+        },
+      });
+    }
+
+    if (person.staleCount > 0) {
+      blocks.push({
+        object: 'block',
+        type: 'callout',
+        callout: {
+          icon: { emoji: '⚠️' },
+          rich_text: [{
+            text: { content: `${person.staleCount} of ${person.totalAssigned} assigned tasks not updated this period` },
+          }],
+        },
+      });
+    }
+  }
+
+  if (openIssues?.length > 0) {
+    blocks.push(
+      { object: 'block', type: 'divider', divider: {} },
+      {
+        object: 'block',
+        type: 'heading_2',
+        heading_2: { rich_text: [{ text: { content: `Open Issues (${openIssues.length})` } }] },
+      }
+    );
+    for (const issue of openIssues) {
+      const parts = [issue.name];
+      if (issue.severity) parts.push(`[${issue.severity}]`);
+      if (issue.assignedTo) parts.push(`— ${issue.assignedTo}`);
+      if (issue.workstream) parts.push(`(${issue.workstream})`);
+      if (issue.taskName) parts.push(`→ ${issue.taskName}`);
+      blocks.push({
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: { rich_text: [{ text: { content: parts.join('  ') } }] },
+      });
+    }
+  }
+
+  if (notes && notes.trim()) {
+    blocks.push(
+      { object: 'block', type: 'divider', divider: {} },
+      {
+        object: 'block',
+        type: 'heading_2',
+        heading_2: { rich_text: [{ text: { content: 'Meeting Notes' } }] },
+      },
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: { rich_text: [{ text: { content: notes } }] },
+      }
+    );
+  }
+
+  if (actionItems?.length > 0) {
+    blocks.push(
+      { object: 'block', type: 'divider', divider: {} },
+      {
+        object: 'block',
+        type: 'heading_2',
+        heading_2: { rich_text: [{ text: { content: 'Action Items' } }] },
+      }
+    );
+    for (const item of actionItems) {
+      blocks.push({
+        object: 'block',
+        type: 'to_do',
+        to_do: {
+          rich_text: [{ text: { content: item.text } }],
+          checked: !!item.done,
+        },
+      });
+    }
+  }
+
+  const BATCH = 100;
+  for (let i = 0; i < blocks.length; i += BATCH) {
+    await notion.blocks.children.append({
+      block_id: page.id,
+      children: blocks.slice(i, i + BATCH),
+    });
+  }
+
+  return { url: page.url, id: page.id };
+}
+
+async function pushPersonNotesToNotion({ pageId, personName, notes, actionItems }) {
+  const allBlocks = [];
+  let cursor = undefined;
+  do {
+    const resp = await notion.blocks.children.list({ block_id: pageId, start_cursor: cursor, page_size: 100 });
+    allBlocks.push(...resp.results);
+    cursor = resp.next_cursor;
+  } while (cursor);
+
+  let insertAfter = null;
+
+  if (personName !== 'General') {
+    let foundHeading = false;
+    for (let i = 0; i < allBlocks.length; i++) {
+      const b = allBlocks[i];
+      if (b.type === 'heading_2') {
+        const text = (b.heading_2.rich_text ?? []).map(t => t.plain_text).join('');
+        if (foundHeading) {
+          insertAfter = allBlocks[i - 1]?.id ?? null;
+          break;
+        }
+        if (text.trim() === personName.trim()) {
+          foundHeading = true;
+        }
+      }
+      if (foundHeading && b.type === 'divider') {
+        insertAfter = allBlocks[i - 1]?.id ?? null;
+        break;
+      }
+    }
+    if (foundHeading && !insertAfter && allBlocks.length > 0) {
+      insertAfter = allBlocks[allBlocks.length - 1].id;
+    }
+  }
+
+  if (!insertAfter && allBlocks.length > 0) {
+    insertAfter = allBlocks[allBlocks.length - 1].id;
+  }
+
+  const blocks = [];
+
+  blocks.push({ object: 'block', type: 'divider', divider: {} });
+  blocks.push({
+    object: 'block',
+    type: 'heading_3',
+    heading_3: {
+      rich_text: [{
+        text: { content: personName === 'General' ? 'General Notes' : `${personName} — Next Week Plan` },
+        annotations: { italic: true },
+      }],
+    },
+  });
+
+  if (notes && notes.trim()) {
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: { rich_text: [{ text: { content: notes } }] },
+    });
+  }
+
+  if (actionItems?.length > 0) {
+    for (const item of actionItems) {
+      blocks.push({
+        object: 'block',
+        type: 'to_do',
+        to_do: {
+          rich_text: [{ text: { content: item.text } }],
+          checked: !!item.done,
+        },
+      });
+    }
+  }
+
+  const appendPayload = { block_id: pageId, children: blocks };
+  if (insertAfter) appendPayload.after = insertAfter;
+
+  await notion.blocks.children.append(appendPayload);
+  return { ok: true };
+}
+
 module.exports = {
   queryNotionDatabase,
   getMergedRoadmap,
   buildHierarchy,
   parseProperty,
   pageToRow,
+  pushMeetingToNotion,
+  pushPersonNotesToNotion,
 };
