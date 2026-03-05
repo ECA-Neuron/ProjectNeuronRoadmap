@@ -60,14 +60,14 @@ export function buildTaskSeriesFromMerged(roadmapRows) {
     const start = task.dateStarted ?? null;
     const end = task.dateExpectedComplete ?? null;
     const biweeklyDates = generateWeeklyDates(start, end);
-    const currentPoints = task.currentPoints ?? 0;
-    const pctComplete = totalPoints > 0 ? currentPoints / totalPoints : 0;
+    const pctComplete = task.percentComplete ?? (totalPoints > 0 ? (task.currentPoints ?? 0) / totalPoints : 0);
+    const currentPoints = pctComplete * totalPoints;
     const isAddedScope = (task.typeOfScope ?? '').toLowerCase().includes('added');
 
     const sortedProgress = [...progressRows].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
     const progressData = sortedProgress.map(r => ({
       date: r.date ? new Date(r.date).toISOString().slice(0, 10) : null,
-      points: Math.max(0, totalPoints - (r.currentPoints ?? 0)),
+      points: Math.max(0, totalPoints * (1 - (r.percentComplete ?? 0))),
       updates: [{
         taskName: task.taskName,
         userName: r.userName ?? '',
@@ -77,22 +77,33 @@ export function buildTaskSeriesFromMerged(roadmapRows) {
       }],
     })).filter(d => d.date);
 
-    const actualData = [];
+    const actualMap = new Map();
     if (start && totalPoints > 0) {
-      actualData.push({ date: start, points: totalPoints, updates: [] });
+      actualMap.set(start, { date: start, points: totalPoints, updates: [] });
     }
     for (const pt of progressData) {
-      if (pt.date <= start) {
-        const nextDay = new Date(start);
-        nextDay.setDate(nextDay.getDate() + 1);
-        const nextDayStr = nextDay.toISOString().slice(0, 10);
-        const existing = actualData.find(d => d.date === nextDayStr);
-        if (existing) { existing.points = pt.points; existing.updates = pt.updates; }
-        else { actualData.push({ date: nextDayStr, points: pt.points, updates: pt.updates }); }
+      let effectiveDate = pt.date;
+      let early = false;
+      if (start && pt.date < start) {
+        early = true;
+        const nextDay = new Date(start + 'T12:00:00Z');
+        nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+        effectiveDate = nextDay.toISOString().slice(0, 10);
+      }
+      const updates = early
+        ? pt.updates.map(u => ({ ...u, earlyProgress: true }))
+        : pt.updates;
+      const originalDate = early ? pt.date : null;
+      const existing = actualMap.get(effectiveDate);
+      if (existing) {
+        existing.points = pt.points;
+        if (updates?.length) existing.updates = [...(existing.updates ?? []), ...updates];
+        if (early) { existing.earlyProgress = true; existing.originalDate = originalDate; }
       } else {
-        actualData.push(pt);
+        actualMap.set(effectiveDate, { ...pt, date: effectiveDate, updates, earlyProgress: early, originalDate });
       }
     }
+    const actualData = [...actualMap.values()].sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
     const originalPoints = isAddedScope ? 0 : totalPoints;
     out[key] = {
       totalPoints,
@@ -134,7 +145,9 @@ export function rollupBurndown(taskSeries, hierarchyNode, dateOverride) {
 
   const today = new Date().toISOString().slice(0, 10);
   const dateSet = new Set();
-  seriesList.forEach(s => (s.actualData ?? []).forEach(d => { if (d.date <= today) dateSet.add(d.date); }));
+  seriesList.forEach(s => (s.actualData ?? []).forEach(d => {
+    if (d.date <= today || d.earlyProgress) dateSet.add(d.date);
+  }));
   if (dateStarted) dateSet.add(dateStarted);
   const sortedDates = [...dateSet].sort();
 

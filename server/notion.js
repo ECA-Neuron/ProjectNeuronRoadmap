@@ -103,6 +103,24 @@ function extractDateRange(row) {
   return { dateStarted, dateExpectedComplete };
 }
 
+function resolveAncestry(rowById, row) {
+  const result = { deliverable: '', epic: '', workstream: '' };
+  let currentId = row['Parent (L1)'] ?? row['__rel_Parent (L1)']?.[0] ?? null;
+  const visited = new Set();
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId);
+    const ancestor = rowById.get(currentId);
+    if (!ancestor) break;
+    const name = trimStr(ancestor.Name ?? ancestor.name ?? '');
+    const level = (ancestor.Level ?? '').trim();
+    if (level === 'Deliverable' && !result.deliverable) result.deliverable = name;
+    else if (level === 'Epic' && !result.epic) result.epic = name;
+    else if (level === 'Workstream' && !result.workstream) result.workstream = name;
+    currentId = ancestor['Parent (L1)'] ?? ancestor['__rel_Parent (L1)']?.[0] ?? null;
+  }
+  return result;
+}
+
 async function getMergedRoadmap() {
   const roadmapId = process.env.NOTION_ROADMAP_DB_ID;
   const workstreamsId = process.env.NOTION_WORKSTREAMS_DB_ID;
@@ -138,21 +156,25 @@ async function getMergedRoadmap() {
       ? progressRows.sort((a, b) => (a.lastEdited ?? '').localeCompare(b.lastEdited ?? '')).at(-1)
       : null;
 
-    const currentPoints = latestProgress
-      ? (parseFloat(trimStr(latestProgress['Current Points '] ?? latestProgress['Current Points'] ?? '0')) || 0)
-      : 0;
-    const remainingPoints = Math.max(0, totalPoints - currentPoints);
     const percentComplete = latestProgress
       ? (parseFloat(trimStr(latestProgress['Percent Complete'] ?? '0')) || 0)
       : 0;
+    const rawCurrentPoints = latestProgress
+      ? (parseFloat(trimStr(latestProgress['Current Points '] ?? latestProgress['Current Points'] ?? '0')) || 0)
+      : 0;
+    const currentPoints = percentComplete > 0 ? totalPoints * percentComplete : rawCurrentPoints;
+    const remainingPoints = Math.max(0, totalPoints - currentPoints);
 
-    const parentId = wsRow['Parent (L1)'] ?? wsRow['__rel_Parent (L1)']?.[0] ?? null;
-    const parentRow = parentId ? wsById.get(parentId) : null;
-    const grandparentName = trimStr(wsRow.Grandparent ?? '');
-
-    const deliverable = (parentRow ? trimStr(parentRow.Name ?? parentRow.name ?? '') : '') || trimStr(wsRow['Deliverable Level'] ?? '') || 'Unknown';
-    const epic = grandparentName || trimStr(wsRow.Grandparent ?? '') || 'Unknown';
-    const workstream = trimStr(wsRow.GreatGrandParent ?? wsRow.WorkStream ?? wsRow.workstream ?? '') || 'Unknown';
+    const ancestry = resolveAncestry(wsById, wsRow);
+    const workstream = ancestry.workstream || trimStr(wsRow.GreatGrandParent ?? wsRow.WorkStream ?? wsRow.workstream ?? '') || 'Unknown';
+    let epic;
+    if (ancestry.epic) {
+      epic = ancestry.epic;
+    } else {
+      const fallback = trimStr(wsRow.Grandparent ?? '');
+      epic = (fallback && fallback !== workstream) ? fallback : 'Other';
+    }
+    const deliverable = ancestry.deliverable || trimStr(wsRow['Deliverable Level'] ?? '') || 'Unknown';
 
     const assignee = trimStr(wsRow.Assign ?? wsRow.assign ?? wsRow.Assignee ?? wsRow.assignee ?? '') || 'Unassigned';
 
@@ -326,23 +348,34 @@ function buildHierarchy(tasks, workstreamsRows) {
         if (!byWorkstream.has(name)) byWorkstream.set(name, new Map());
         if (url) urlMap.workstream[name] = url;
       }
-      if (level === 'Epic' && ws && name) {
-        if (!byWorkstream.has(ws)) byWorkstream.set(ws, new Map());
-        const byEpic = byWorkstream.get(ws);
-        if (!byEpic.has(name)) byEpic.set(name, new Map());
-        if (url) urlMap.epic[name] = url;
+      if (level === 'Epic' && name) {
+        const anc = resolveAncestry(rowById, row);
+        const wsName = anc.workstream || ws;
+        if (wsName) {
+          if (!byWorkstream.has(wsName)) byWorkstream.set(wsName, new Map());
+          const byEpic = byWorkstream.get(wsName);
+          if (!byEpic.has(name)) byEpic.set(name, new Map());
+          if (url) urlMap.epic[name] = url;
+        }
       }
-      if (level === 'Deliverable' && ws && name) {
-        const parentId = row['Parent (L1)'];
-        const parentRow = parentId ? rowById.get(parentId) : null;
-        const epicName = parentRow ? trimStr(parentRow.Name ?? parentRow.name ?? '') : trimStr(row.Grandparent ?? '');
-        if (!byWorkstream.has(ws)) byWorkstream.set(ws, new Map());
-        const byEpic = byWorkstream.get(ws);
-        const epic = epicName || 'Unknown';
-        if (!byEpic.has(epic)) byEpic.set(epic, new Map());
-        const byDel = byEpic.get(epic);
-        if (!byDel.has(name)) byDel.set(name, []);
-        if (url) urlMap.deliverable[name] = url;
+      if (level === 'Deliverable' && name) {
+        const anc = resolveAncestry(rowById, row);
+        const wsName = anc.workstream || ws;
+        if (wsName) {
+          let epicFinal;
+          if (anc.epic) {
+            epicFinal = anc.epic;
+          } else {
+            const fallback = trimStr(row.Grandparent ?? '');
+            epicFinal = (fallback && fallback !== wsName) ? fallback : 'Other';
+          }
+          if (!byWorkstream.has(wsName)) byWorkstream.set(wsName, new Map());
+          const byEpic = byWorkstream.get(wsName);
+          if (!byEpic.has(epicFinal)) byEpic.set(epicFinal, new Map());
+          const byDel = byEpic.get(epicFinal);
+          if (!byDel.has(name)) byDel.set(name, []);
+          if (url) urlMap.deliverable[name] = url;
+        }
       }
     }
   }

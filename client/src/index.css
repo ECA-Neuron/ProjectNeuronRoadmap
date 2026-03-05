@@ -672,6 +672,12 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   color: var(--link);
   font-weight: 600;
 }
+.chart-tooltip-early {
+  font-size: var(--fs-xs);
+  color: var(--amber);
+  font-weight: 600;
+  margin-top: 2px;
+}
 .chart-tooltip-comment {
   font-size: var(--fs-xs);
   color: var(--text-secondary);

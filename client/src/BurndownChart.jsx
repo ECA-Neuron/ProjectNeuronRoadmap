@@ -76,6 +76,7 @@ function CustomTooltip({ active, payload, label }) {
                 {u.userName && <span>{u.userName}</span>}
                 <span>{Math.round((u.prevPct ?? 0) * 100)}% → {Math.round((u.pct ?? 0) * 100)}%</span>
               </div>
+              {u.earlyProgress && <div className="chart-tooltip-early">Updated before expected start date</div>}
               {u.comment && <div className="chart-tooltip-comment">"{u.comment}"</div>}
             </div>
           ))}
@@ -129,13 +130,14 @@ export default function BurndownChart({ series, title, level, assignee, blocking
 
   const biweekly = generateWeeklyDates(series.dateStarted, series.dateExpectedComplete);
   const actual = (series.actualData ?? []);
-  const actualDates = new Set(actual.map(d => d.date));
+  const actualInRange = actual.filter(d => d.date >= series.dateStarted);
+  const actualDates = new Set(actualInRange.map(d => d.date));
   const allDates = new Set([...actualDates, series.dateStarted, series.dateExpectedComplete]);
   const sortedDates = [...allDates].sort();
 
   const startTs = new Date(series.dateStarted).getTime();
   const endTs = new Date(series.dateExpectedComplete).getTime();
-  const lastActualDate = actual.length > 0 ? actual[actual.length - 1].date : null;
+  const lastActualDate = actualInRange.length > 0 ? actualInRange[actualInRange.length - 1].date : null;
   const lastActualTs = lastActualDate ? new Date(lastActualDate).getTime() : null;
 
   const ticksArr = [startTs];
@@ -162,7 +164,8 @@ export default function BurndownChart({ series, title, level, assignee, blocking
       if (exactPt?.updates?.length > 0) updates = exactPt.updates;
     }
 
-    return { ts: t, date, ideal: idealVal, adjustedIdeal: adjustedVal, actual: actualVal, updates };
+    const earlyProgress = updates.some(u => u.earlyProgress);
+    return { ts: t, date, ideal: idealVal, adjustedIdeal: adjustedVal, actual: actualVal, updates, earlyProgress };
   });
   combined.sort((a, b) => a.ts - b.ts);
 
@@ -228,7 +231,11 @@ export default function BurndownChart({ series, title, level, assignee, blocking
             {hasAddedScope && (
               <Line type="linear" dataKey="adjustedIdeal" stroke="var(--chart-adjusted)" strokeWidth={2} strokeDasharray="6 3" name="Adjusted (w/ Added Scope)" dot={false} connectNulls />
             )}
-            <Line type="linear" dataKey="actual" stroke="var(--chart-actual)" strokeWidth={2} name="Actual" dot={{ r: 3, fill: 'var(--chart-actual)' }} connectNulls />
+            <Line type="linear" dataKey="actual" stroke="var(--chart-actual)" strokeWidth={2} name="Actual" dot={({ cx, cy, payload }) => {
+              if (payload?.actual == null || cx == null || cy == null) return null;
+              const fill = payload.earlyProgress ? 'var(--amber)' : 'var(--chart-actual)';
+              return <circle key={payload.ts} cx={cx} cy={cy} r={payload.earlyProgress ? 5 : 3} fill={fill} stroke={fill} />;
+            }} connectNulls />
           </LineChart>
         </ResponsiveContainer>
       </div>

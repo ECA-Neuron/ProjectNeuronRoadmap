@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 function nodeKey(type, ...parts) {
   return [type, ...parts].join('|');
@@ -31,6 +31,42 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
     });
     onSelect(selectPayload);
   };
+
+  useEffect(() => {
+    if (!selected) return;
+    setExpanded(s => {
+      const next = { workstream: { ...s.workstream }, epic: { ...s.epic }, deliverable: { ...s.deliverable } };
+      if (selected.type === 'task') {
+        const parts = selected.key.split('|');
+        if (parts.length >= 4) {
+          const [ws, epic, del] = parts;
+          next.workstream[`workstream|${ws}`] = true;
+          next.epic[`epic|${ws}|${epic}`] = true;
+          next.deliverable[`deliverable|${ws}|${epic}|${del}`] = true;
+        }
+      } else if (selected.type === 'deliverable') {
+        const parts = selected.key.split('|');
+        if (parts.length >= 4) {
+          next.workstream[`workstream|${parts[1]}`] = true;
+          next.epic[`epic|${parts[1]}|${parts[2]}`] = true;
+        }
+      } else if (selected.type === 'epic') {
+        const parts = selected.key.split('|');
+        if (parts.length >= 3) {
+          next.workstream[`workstream|${parts[1]}`] = true;
+        }
+      } else if (selected.type === 'workstream') {
+        next.workstream[selected.key] = true;
+      }
+      return next;
+    });
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.querySelector('.tree-label.selected');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+    });
+  }, [selected]);
 
   const autoExpand = !!filterDeliverable;
   const isExpanded = (level, key) => autoExpand || expanded[level]?.[key] === true;
