@@ -176,6 +176,8 @@ export function rollupBurndown(taskSeries, hierarchyNode, dateOverride) {
   }
   for (const pt of rawActual) {
     if (pt.date === dateStarted && pt.points === totalPoints) continue;
+    const prev = actualData[actualData.length - 1];
+    if (prev && pt.points === prev.points && pt.updates.length === 0) continue;
     actualData.push(pt);
   }
   const idealLine = dateStarted && dateExpectedComplete
