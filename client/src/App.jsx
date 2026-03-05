@@ -186,7 +186,18 @@ export default function App() {
       selected.type === 'epic' ? levelDates.epic[selected.name] :
       selected.type === 'workstream' ? levelDates.workstream[selected.name] :
       null;
-    return rollupBurndown(taskSeries, { tasks: selected.tasks ?? [] }, dateOverride);
+    let tasks = selected.tasks ?? [];
+    let result = rollupBurndown(taskSeries, { tasks }, dateOverride);
+    if (result.totalPoints === 0 && data?.roadmapRows) {
+      const rows = data.roadmapRows;
+      const name = selected.name;
+      let fallbackTasks = [];
+      if (selected.type === 'deliverable') fallbackTasks = rows.filter(r => r.Deliverable === name);
+      else if (selected.type === 'epic') fallbackTasks = rows.filter(r => r.Epic === name);
+      else if (selected.type === 'workstream') fallbackTasks = rows.filter(r => r.Workstream === name);
+      if (fallbackTasks.length > 0) result = rollupBurndown(taskSeries, { tasks: fallbackTasks }, dateOverride);
+    }
+    return result;
   })();
 
   const selectedTask = selected?.type === 'task' ? (selected.tasks?.[0] ?? null) : null;

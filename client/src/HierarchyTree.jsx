@@ -24,12 +24,11 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
   const [expanded, setExpanded] = useState({ workstream: {}, epic: {}, deliverable: {} });
 
   const toggleAndSelect = (level, key, selectPayload) => {
-    setExpanded(s => {
-      const wasOpen = s[level]?.[key] === true;
-      const shouldClose = wasOpen && selected?.key === selectPayload.key;
-      return { ...s, [level]: { ...s[level], [key]: shouldClose ? false : true } };
-    });
-    onSelect(selectPayload);
+    const wasOpen = expanded[level]?.[key] === true;
+    const isAlreadySelected = selected?.key === selectPayload.key;
+    const shouldClose = wasOpen && isAlreadySelected;
+    setExpanded(s => ({ ...s, [level]: { ...s[level], [key]: !shouldClose } }));
+    if (!shouldClose) onSelect(selectPayload);
   };
 
   useEffect(() => {
