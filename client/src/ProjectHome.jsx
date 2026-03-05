@@ -294,7 +294,10 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
     const dateSet = new Set();
     if (start) dateSet.add(start);
     Object.values(taskSeries).forEach(s =>
-      (s.actualData ?? []).forEach(d => { if (d.date <= today) dateSet.add(d.date); })
+      (s.actualData ?? []).forEach(d => {
+        const effectiveDate = d.originalDate ?? d.date;
+        if (effectiveDate <= today) dateSet.add(effectiveDate);
+      })
     );
     const sortedDates = [...dateSet].sort();
 
@@ -304,10 +307,11 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
       const updates = [];
       for (const s of seriesList) {
         const arr = s.actualData ?? [];
-        const last = arr.filter(d => d.date <= date).pop();
+        const last = arr.filter(d => (d.originalDate ?? d.date) <= date).pop();
         if (last) {
           points += last.points;
-          if (last.date === date && last.updates?.length > 0) updates.push(...last.updates);
+          const matchDate = last.originalDate ?? last.date;
+          if (matchDate === date && last.updates?.length > 0) updates.push(...last.updates);
         }
         else points += s.totalPoints;
       }
