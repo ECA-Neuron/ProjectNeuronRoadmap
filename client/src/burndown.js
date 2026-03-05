@@ -146,8 +146,7 @@ export function rollupBurndown(taskSeries, hierarchyNode, dateOverride) {
   const today = new Date().toISOString().slice(0, 10);
   const dateSet = new Set();
   seriesList.forEach(s => (s.actualData ?? []).forEach(d => {
-    const effectiveDate = d.originalDate ?? d.date;
-    if (effectiveDate <= today) dateSet.add(effectiveDate);
+    if (d.date <= today || d.earlyProgress) dateSet.add(d.date);
   }));
   if (dateStarted) dateSet.add(dateStarted);
   const sortedDates = [...dateSet].sort();
@@ -157,11 +156,10 @@ export function rollupBurndown(taskSeries, hierarchyNode, dateOverride) {
     const updates = [];
     for (const s of seriesList) {
       const arr = s.actualData ?? [];
-      const last = arr.filter(d => (d.originalDate ?? d.date) <= date).pop();
+      const last = arr.filter(d => d.date <= date).pop();
       if (last) {
         points += last.points;
-        const matchDate = last.originalDate ?? last.date;
-        if (matchDate === date && last.updates?.length > 0) {
+        if (last.date === date && last.updates?.length > 0) {
           updates.push(...last.updates);
         }
       }
