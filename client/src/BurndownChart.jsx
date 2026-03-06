@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { isSeriesOffTrack } from './burndown';
 
@@ -98,11 +98,111 @@ function PercentBadge({ pct, totalPoints, currentPoints }) {
   );
 }
 
-export default function BurndownChart({ series, title, level, assignee, blockingItems, openIssues, tasks }) {
+export default function BurndownChart({ series, title, level, assignee, blockingItems, openIssues, tasks, onRefresh }) {
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateForm, setUpdateForm] = useState({ percentComplete: '', comment: '', userName: '' });
+  const [updateStatus, setUpdateStatus] = useState(null);
+
+  const taskObj = level === 'task' && tasks?.length === 1 ? tasks[0] : null;
+  const taskId = taskObj?.taskId ?? null;
+  const currentPctForForm = taskObj ? Math.round((taskObj.percentComplete ?? 0) * 100) : 0;
+
+  const openUpdateModal = useCallback(() => {
+    setUpdateForm({ percentComplete: String(currentPctForForm), comment: '', userName: '' });
+    setUpdateStatus(null);
+    setShowUpdateModal(true);
+  }, [currentPctForForm]);
+
+  const submitUpdate = useCallback(async () => {
+    if (!taskId) return;
+    const pct = parseInt(updateForm.percentComplete, 10);
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      setUpdateStatus({ type: 'error', msg: 'Percent must be 0–100' });
+      return;
+    }
+    setUpdateStatus({ type: 'loading', msg: 'Pushing update...' });
+    try {
+      const resp = await fetch(`/api/task/${taskId}/progress`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          percentComplete: pct,
+          comment: updateForm.comment,
+          userName: updateForm.userName,
+          workstream: taskObj?.Workstream ?? '',
+          epic: taskObj?.Epic ?? '',
+          deliverable: taskObj?.Deliverable ?? '',
+        }),
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || 'Failed to push update');
+      }
+      setUpdateStatus({ type: 'success', msg: 'Progress updated! Refreshing data...' });
+      setTimeout(() => {
+        setShowUpdateModal(false);
+        setUpdateStatus(null);
+        if (onRefresh) onRefresh();
+      }, 3000);
+    } catch (err) {
+      setUpdateStatus({ type: 'error', msg: err.message });
+    }
+  }, [taskId, updateForm, onRefresh]);
+
+  const relatedIssues = React.useMemo(() => {
+    if (!openIssues?.length || !tasks?.length) return [];
+    const taskIds = new Set(tasks.map(t => t.taskId));
+    return openIssues.filter(issue => {
+      if (!issue.relatedTaskId) return false;
+      const status = (issue.status ?? '').toLowerCase();
+      if (status === 'closed' || status === 'resolved') return false;
+      return taskIds.has(issue.relatedTaskId);
+    });
+  }, [openIssues, tasks]);
+
+  const updateModal = showUpdateModal ? (
+    <div className="progress-modal-overlay" onClick={() => setShowUpdateModal(false)}>
+      <div className="progress-modal" onClick={e => e.stopPropagation()}>
+        <h4>Push Progress Update</h4>
+        <label>
+          Percent Complete (0–100)
+          <input type="number" min="0" max="100" value={updateForm.percentComplete}
+            onChange={e => setUpdateForm(f => ({ ...f, percentComplete: e.target.value }))} />
+        </label>
+        <label>
+          Your Name (optional)
+          <input type="text" value={updateForm.userName}
+            onChange={e => setUpdateForm(f => ({ ...f, userName: e.target.value }))} placeholder="e.g. Anthony" />
+        </label>
+        <label>
+          Reason / Comment
+          <textarea rows={3} value={updateForm.comment}
+            onChange={e => setUpdateForm(f => ({ ...f, comment: e.target.value }))} placeholder="What changed?" />
+        </label>
+        {updateStatus && (
+          <div className={`progress-modal-status progress-modal-${updateStatus.type}`}>{updateStatus.msg}</div>
+        )}
+        <div className="progress-modal-actions">
+          <button className="progress-modal-submit" onClick={submitUpdate}
+            disabled={updateStatus?.type === 'loading'}>Push Update</button>
+          <button className="progress-modal-cancel" onClick={() => setShowUpdateModal(false)}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
+  const updateButton = taskId ? (
+    <button className="btn-update-progress" onClick={openUpdateModal} title="Push Progress Update">
+      &#x1F4DD; Update Progress
+    </button>
+  ) : null;
+
   if (!series) {
     return (
       <div className="burndown-chart empty">
         <h3>{title}</h3>
+        {updateButton}
+        {updateModal}
         <div className="empty-state">
           <div className="empty-state-icon">📊</div>
           <p className="empty-state-text">Select a node from the tree to view its burndown.</p>
@@ -122,7 +222,14 @@ export default function BurndownChart({ series, title, level, assignee, blocking
     return (
       <div className="burndown-chart empty">
         <h3>{title}</h3>
-        <PercentBadge pct={pct} totalPoints={totalPts} currentPoints={currentPts} />
+        <div className="chart-top-row">
+          <div className="chart-info" />
+          <div className="chart-top-right">
+            {updateButton}
+            <PercentBadge pct={pct} totalPoints={totalPts} currentPoints={currentPts} />
+          </div>
+        </div>
+        {updateModal}
         <p className="no-date-msg">No date provided</p>
       </div>
     );
@@ -170,17 +277,6 @@ export default function BurndownChart({ series, title, level, assignee, blocking
   combined.sort((a, b) => a.ts - b.ts);
 
   const offTrack = isSeriesOffTrack(series);
-
-  const relatedIssues = React.useMemo(() => {
-    if (!openIssues?.length || !tasks?.length) return [];
-    const taskIds = new Set(tasks.map(t => t.taskId));
-    return openIssues.filter(issue => {
-      if (!issue.relatedTaskId) return false;
-      const status = (issue.status ?? '').toLowerCase();
-      if (status === 'closed' || status === 'resolved') return false;
-      return taskIds.has(issue.relatedTaskId);
-    });
-  }, [openIssues, tasks]);
 
   return (
     <div className="burndown-chart">
@@ -237,8 +333,12 @@ export default function BurndownChart({ series, title, level, assignee, blocking
           <span>Total pts: {totalPts}</span>
           {assignee && assignee !== 'Unassigned' && <span className="chart-assignee">Assigned: {assignee}</span>}
         </div>
-        <PercentBadge pct={pct} totalPoints={totalPts} currentPoints={currentPts} />
+        <div className="chart-top-right">
+          {updateButton}
+          <PercentBadge pct={pct} totalPoints={totalPts} currentPoints={currentPts} />
+        </div>
       </div>
+      {updateModal}
       <div className="chart-wrap">
         <ResponsiveContainer width="100%" height={360}>
           <LineChart data={combined} margin={{ top: 8, right: 20, left: 4, bottom: 8 }}>

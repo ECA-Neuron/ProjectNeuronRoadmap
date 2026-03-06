@@ -4,6 +4,12 @@ function nodeKey(type, ...parts) {
   return [type, ...parts].join('|');
 }
 
+const LEVEL_BADGES = { workstream: ['WS', 'badge-ws'], epic: ['EP', 'badge-ep'], deliverable: ['DL', 'badge-del'], task: ['TK', 'badge-tk'] };
+function LevelBadge({ level }) {
+  const [label, cls] = LEVEL_BADGES[level] ?? ['', ''];
+  return <span className={`tree-level-badge ${cls}`}>{label}</span>;
+}
+
 function NotionLink({ url }) {
   if (!url) return null;
   return (
@@ -106,6 +112,7 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
                               onClick={() => onSelect({ type: 'task', key: tKey, name: taskName, tasks: [t], url: t.url })}
                             >
                               <span className="tree-icon task-icon">•</span>
+                              <LevelBadge level="task" />
                               <span className="tree-name">{taskName || 'Task'}</span>
                               <span className="tree-pts">{t.totalPoints ?? 0} pts</span>
                               {isRebaselined && <span className="rebaseline-badge">Date changed</span>}
@@ -138,6 +145,7 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
                             className={`tree-label ${isSelected('deliverable', delKey) ? 'selected' : ''}`}
                             onClick={() => onSelect({ type: 'deliverable', key: delKey, name: del.name, tasks: del.tasks ?? [], url: del.url })}
                           >
+                            <LevelBadge level="deliverable" />
                             <span className="tree-name">{del.name}</span>
                             <span className="tree-pts">{del.totalPoints ?? 0} pts</span>
                             <NotionLink url={del.url} />
@@ -158,6 +166,7 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
                 onClick={() => toggleAndSelect('workstream', wsKey, { type: 'workstream', key: wsKey, name: ws.name, tasks: ws.tasks ?? [], url: ws.url })}
               >
                 <span className="tree-icon">{isExpanded('workstream', wsKey) ? '▾' : '▸'}</span>
+                <LevelBadge level="workstream" />
                 <span className="tree-name">{ws.name}</span>
                 <span className="tree-pts">{ws.totalPoints ?? 0} pts</span>
                 <NotionLink url={ws.url} />
@@ -174,6 +183,7 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
                           onClick={() => toggleAndSelect('epic', epicKey, { type: 'epic', key: epicKey, name: epic.name, tasks: epic.tasks ?? [], url: epic.url })}
                         >
                           <span className="tree-icon">{isExpanded('epic', epicKey) ? '▾' : '▸'}</span>
+                          <LevelBadge level="epic" />
                           <span className="tree-name">{epic.name}</span>
                           <span className="tree-pts">{epic.totalPoints ?? 0} pts</span>
                           <NotionLink url={epic.url} />
@@ -190,6 +200,7 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
                                     onClick={() => toggleAndSelect('deliverable', delKey, { type: 'deliverable', key: delKey, name: del.name, tasks: del.tasks ?? [], url: del.url })}
                                   >
                                     <span className="tree-icon">{isExpanded('deliverable', delKey) ? '▾' : '▸'}</span>
+                                    <LevelBadge level="deliverable" />
                                     <span className="tree-name">{del.name}</span>
                                     <span className="tree-pts">{del.totalPoints ?? 0} pts</span>
                                     <NotionLink url={del.url} />
@@ -208,6 +219,7 @@ export default function HierarchyTree({ hierarchy, selected, onSelect, rebaselin
                                               onClick={() => onSelect({ type: 'task', key: tKey, name: taskName, tasks: [t], url: t.url })}
                                             >
                                               <span className="tree-icon task-icon">•</span>
+                                              <LevelBadge level="task" />
                                               <span className="tree-name">{taskName || 'Task'}</span>
                                               <span className="tree-pts">{t.totalPoints ?? 0} pts</span>
                                               {isRebaselined && <span className="rebaseline-badge">Date changed</span>}

@@ -7,6 +7,8 @@ import OpenIssuesBanner from './OpenIssuesBanner';
 import ProjectHome from './ProjectHome';
 import OpenIssuesPage from './OpenIssuesPage';
 import WeeklyMeeting from './WeeklyMeeting';
+import TimelineView from './TimelineView';
+import CreateItemPage from './CreateItemPage';
 import { buildTaskSeriesFromMerged, rollupBurndown, computeLateBlockers } from './burndown';
 import DateChangeBanner from './DateChangeBanner';
 import { detectAndPersistRebaselines, detectAllLevelDateChanges } from './rebaseline';
@@ -279,6 +281,24 @@ export default function App() {
                 <span className="nav-tab-icon">&#128197;</span>
                 <span className="nav-tab-label">Meeting</span>
               </button>
+              <div className="nav-tab-divider" />
+              <button
+                type="button"
+                className={`nav-tab ${!selected && activePage === 'timeline' ? 'active' : ''}`}
+                onClick={() => { setSelected(null); setActivePage('timeline'); }}
+              >
+                <span className="nav-tab-icon">&#9776;</span>
+                <span className="nav-tab-label">Timeline</span>
+              </button>
+              <div className="nav-tab-divider" />
+              <button
+                type="button"
+                className={`nav-tab ${!selected && activePage === 'create' ? 'active' : ''}`}
+                onClick={() => { setSelected(null); setActivePage('create'); }}
+              >
+                <span className="nav-tab-icon">&#43;</span>
+                <span className="nav-tab-label">Create</span>
+              </button>
             </div>
           </div>
           <div className="sidebar-filters">
@@ -327,6 +347,19 @@ export default function App() {
               onNavigateToTask={navigateToTask}
             />
           )}
+          {!selected && data && activePage === 'timeline' && (
+            <TimelineView
+              data={data}
+              onSelect={setSelected}
+              onRefresh={() => fetchRoadmap(true)}
+            />
+          )}
+          {!selected && data && activePage === 'create' && (
+            <CreateItemPage
+              hierarchy={data.hierarchy ?? []}
+              onRefresh={() => fetchRoadmap(true)}
+            />
+          )}
           {!selected && data && activePage === 'home' && (
             <ProjectHome
               data={data}
@@ -368,6 +401,7 @@ export default function App() {
                 }
                 openIssues={data?.openIssues ?? []}
                 tasks={selected.tasks ?? (selectedTask ? [selectedTask] : [])}
+                onRefresh={() => fetchRoadmap(true)}
               />
               {selected.type === 'task' && selectedTask && (
                 <TaskDetail task={selectedTask} openIssues={data?.openIssues ?? []} lateBlockers={lateBlockers} />

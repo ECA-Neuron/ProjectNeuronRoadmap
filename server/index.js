@@ -29,7 +29,7 @@ for (const envPath of envPaths) {
 }
 const express = require('express');
 const cors = require('cors');
-const { queryNotionDatabase, getMergedRoadmap, pushMeetingToNotion, pushPersonNotesToNotion } = require('./notion');
+const { queryNotionDatabase, getMergedRoadmap, pushMeetingToNotion, pushPersonNotesToNotion, updateItemDates, pushProgressUpdate, createWorkstreamItem } = require('./notion');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -44,13 +44,23 @@ if (fs.existsSync(clientDist)) {
 
 const CACHE_TTL_MS = 60 * 1000;
 let cache = { data: null, timestamp: 0, refreshing: false };
+const pendingProgressRows = [];
+const MAX_PENDING_AGE_MS = 5 * 60 * 1000;
+
+function pruneStalePending() {
+  const cutoff = Date.now() - MAX_PENDING_AGE_MS;
+  while (pendingProgressRows.length && pendingProgressRows[0]._addedAt < cutoff) {
+    pendingProgressRows.shift();
+  }
+}
 
 async function refreshCache() {
   if (cache.refreshing) return;
   cache.refreshing = true;
   const start = Date.now();
   try {
-    const data = await getMergedRoadmap();
+    pruneStalePending();
+    const data = await getMergedRoadmap(pendingProgressRows);
     cache.data = data;
     cache.timestamp = Date.now();
     console.log(`Cache refreshed in ${Date.now() - start}ms`);
@@ -80,7 +90,8 @@ app.get('/api/roadmap', async (req, res) => {
   }
 
   try {
-    const data = await getMergedRoadmap();
+    pruneStalePending();
+    const data = await getMergedRoadmap(pendingProgressRows);
     cache.data = data;
     cache.timestamp = Date.now();
     res.json(data);
@@ -149,6 +160,69 @@ app.post('/api/meeting/push-notes', async (req, res) => {
   } catch (err) {
     console.error('Person notes push error:', err);
     res.status(500).json({ error: err.message || 'Failed to push notes to Notion' });
+  }
+});
+
+app.post('/api/task/:id/progress', async (req, res) => {
+  try {
+    const taskId = req.params.id;
+    const { percentComplete, comment, userName, workstream, epic, deliverable } = req.body;
+    if (!taskId) return res.status(400).json({ error: 'Task ID is required' });
+    if (percentComplete == null) return res.status(400).json({ error: 'percentComplete is required' });
+    const result = await pushProgressUpdate({ taskId, percentComplete, comment, userName, workstream, epic, deliverable });
+    const nowISO = new Date().toISOString();
+    pendingProgressRows.push({
+      id: result.id,
+      Task: taskId,
+      'Percent Complete': String(percentComplete / 100),
+      'Reason for Update': comment || '',
+      'Update Name': userName || '',
+      'Date Added': nowISO.slice(0, 10),
+      Workstream: workstream || '',
+      Epic: epic || '',
+      Deliverable: deliverable || '',
+      created: nowISO,
+      lastEdited: nowISO,
+      url: result.url ?? null,
+      _addedAt: Date.now(),
+    });
+    cache.data = null;
+    cache.timestamp = 0;
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Progress update error:', err);
+    res.status(500).json({ error: err.message || 'Failed to push progress update' });
+  }
+});
+
+app.post('/api/item/create', async (req, res) => {
+  try {
+    const { name, level, parentId, startDate, endDate, estimatedDays, totalPoints, levelOfRisk, typeOfScope, status, text } = req.body;
+    if (!name || !level) return res.status(400).json({ error: 'name and level are required' });
+    if (level !== 'Workstream' && !parentId) return res.status(400).json({ error: 'parentId is required for non-Workstream items' });
+    const result = await createWorkstreamItem({ name, level, parentId, startDate, endDate, estimatedDays, totalPoints, levelOfRisk, typeOfScope, status, text });
+    cache.data = null;
+    cache.timestamp = 0;
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Create item error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create item' });
+  }
+});
+
+app.patch('/api/item/:id/dates', async (req, res) => {
+  try {
+    const { start, end } = req.body;
+    const pageId = req.params.id;
+    if (!pageId) return res.status(400).json({ error: 'Page ID is required' });
+    await updateItemDates({ pageId, start: start || null, end: end || null });
+    cache.data = null;
+    cache.timestamp = 0;
+    refreshCache();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Date update error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update dates' });
   }
 });
 

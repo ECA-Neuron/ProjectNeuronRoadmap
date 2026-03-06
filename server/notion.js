@@ -121,7 +121,7 @@ function resolveAncestry(rowById, row) {
   return result;
 }
 
-async function getMergedRoadmap() {
+async function getMergedRoadmap(extraProgressRows = []) {
   const roadmapId = process.env.NOTION_ROADMAP_DB_ID;
   const workstreamsId = process.env.NOTION_WORKSTREAMS_DB_ID;
   if (!roadmapId || !workstreamsId) throw new Error('NOTION_ROADMAP_DB_ID and NOTION_WORKSTREAMS_DB_ID must be set');
@@ -130,6 +130,15 @@ async function getMergedRoadmap() {
     queryNotionDatabase(roadmapId),
     queryNotionDatabase(workstreamsId),
   ]);
+
+  if (extraProgressRows.length) {
+    const existingIds = new Set(roadmapRows.map(r => r.id));
+    for (const extra of extraProgressRows) {
+      if (!existingIds.has(extra.id)) {
+        roadmapRows.push(extra);
+      }
+    }
+  }
 
   const wsById = new Map();
   for (const row of workstreamsRows) {
@@ -335,6 +344,7 @@ async function getMergedRoadmap() {
 function buildHierarchy(tasks, workstreamsRows) {
   const byWorkstream = new Map();
   const urlMap = { workstream: {}, epic: {}, deliverable: {} };
+  const idMap = { workstream: {}, epic: {}, deliverable: {} };
 
   if (workstreamsRows) {
     const rowById = new Map(workstreamsRows.map(r => [r.id, r]));
@@ -347,6 +357,7 @@ function buildHierarchy(tasks, workstreamsRows) {
       if (level === 'Workstream' && name) {
         if (!byWorkstream.has(name)) byWorkstream.set(name, new Map());
         if (url) urlMap.workstream[name] = url;
+        if (row.id) idMap.workstream[name] = row.id;
       }
       if (level === 'Epic' && name) {
         const anc = resolveAncestry(rowById, row);
@@ -356,6 +367,7 @@ function buildHierarchy(tasks, workstreamsRows) {
           const byEpic = byWorkstream.get(wsName);
           if (!byEpic.has(name)) byEpic.set(name, new Map());
           if (url) urlMap.epic[name] = url;
+          if (row.id) idMap.epic[name] = row.id;
         }
       }
       if (level === 'Deliverable' && name) {
@@ -375,6 +387,7 @@ function buildHierarchy(tasks, workstreamsRows) {
           const byDel = byEpic.get(epicFinal);
           if (!byDel.has(name)) byDel.set(name, []);
           if (url) urlMap.deliverable[name] = url;
+          if (row.id) idMap.deliverable[name] = row.id;
         }
       }
     }
@@ -402,17 +415,17 @@ function buildHierarchy(tasks, workstreamsRows) {
       for (const [deliverable, tasks] of deliverables) {
         const totalPoints = tasks.reduce((s, t) => s + (t.totalPoints ?? 0), 0);
         const currentPoints = tasks.reduce((s, t) => s + (t.currentPoints ?? 0), 0);
-        delList.push({ name: deliverable, tasks, totalPoints, currentPoints, remainingPoints: Math.max(0, totalPoints - currentPoints), url: urlMap.deliverable[deliverable] ?? null });
+        delList.push({ name: deliverable, tasks, totalPoints, currentPoints, remainingPoints: Math.max(0, totalPoints - currentPoints), url: urlMap.deliverable[deliverable] ?? null, notionId: idMap.deliverable[deliverable] ?? null });
         allTasksEpic = allTasksEpic.concat(tasks);
       }
       const epicTotalPts = allTasksEpic.reduce((s, t) => s + (t.totalPoints ?? 0), 0);
       const epicCurrPts = allTasksEpic.reduce((s, t) => s + (t.currentPoints ?? 0), 0);
-      epicList.push({ name: epic, deliverables: delList, tasks: allTasksEpic, totalPoints: epicTotalPts, currentPoints: epicCurrPts, url: urlMap.epic[epic] ?? null });
+      epicList.push({ name: epic, deliverables: delList, tasks: allTasksEpic, totalPoints: epicTotalPts, currentPoints: epicCurrPts, url: urlMap.epic[epic] ?? null, notionId: idMap.epic[epic] ?? null });
       allTasksWs = allTasksWs.concat(allTasksEpic);
     }
     const wsTotalPts = allTasksWs.reduce((s, t) => s + (t.totalPoints ?? 0), 0);
     const wsCurrPts = allTasksWs.reduce((s, t) => s + (t.currentPoints ?? 0), 0);
-    tree.push({ name: workstream, epics: epicList, tasks: allTasksWs, totalPoints: wsTotalPts, currentPoints: wsCurrPts, url: urlMap.workstream[workstream] ?? null });
+    tree.push({ name: workstream, epics: epicList, tasks: allTasksWs, totalPoints: wsTotalPts, currentPoints: wsCurrPts, url: urlMap.workstream[workstream] ?? null, notionId: idMap.workstream[workstream] ?? null });
   }
   return tree;
 }
@@ -629,6 +642,88 @@ async function pushPersonNotesToNotion({ pageId, personName, notes, actionItems 
   return { ok: true };
 }
 
+async function pushProgressUpdate({ taskId, percentComplete, comment, userName, workstream, epic, deliverable }) {
+  const roadmapId = process.env.NOTION_ROADMAP_DB_ID;
+  if (!roadmapId) throw new Error('NOTION_ROADMAP_DB_ID is not set');
+
+  const properties = {
+    'Task': { relation: [{ id: taskId }] },
+    'Percent Complete': { rich_text: [{ text: { content: String(percentComplete / 100) } }] },
+    'Reason for Update': { rich_text: [{ text: { content: comment || '' } }] },
+    'Date Added': { date: { start: new Date().toISOString().slice(0, 10) } },
+  };
+  if (userName) {
+    properties['Update Name'] = { rich_text: [{ text: { content: userName } }] };
+  }
+  if (workstream) {
+    properties['Workstream'] = { rich_text: [{ text: { content: workstream } }] };
+  }
+  if (epic) {
+    properties['Epic'] = { rich_text: [{ text: { content: epic } }] };
+  }
+  if (deliverable) {
+    properties['Deliverable'] = { rich_text: [{ text: { content: deliverable } }] };
+  }
+
+  const page = await notion.pages.create({
+    parent: { database_id: roadmapId },
+    properties,
+  });
+  return { id: page.id, url: page.url };
+}
+
+async function createWorkstreamItem({ name, level, parentId, startDate, endDate, estimatedDays, totalPoints, levelOfRisk, typeOfScope, status, text }) {
+  const dbId = process.env.NOTION_WORKSTREAMS_DB_ID;
+  if (!dbId) throw new Error('NOTION_WORKSTREAMS_DB_ID is not set');
+  if (!name || !level) throw new Error('name and level are required');
+
+  const properties = {
+    Name: { title: [{ text: { content: name } }] },
+    Level: { select: { name: level } },
+  };
+
+  if (parentId) {
+    properties['Parent (L1)'] = { relation: [{ id: parentId }] };
+  }
+
+  if (startDate) {
+    properties.Date = { date: { start: startDate, end: endDate || null } };
+  }
+  if (estimatedDays != null && estimatedDays !== '') {
+    properties['Estimated Days'] = { number: Number(estimatedDays) };
+  }
+  if (totalPoints != null && totalPoints !== '') {
+    properties['Total Points'] = { number: Number(totalPoints) };
+  }
+  if (levelOfRisk) {
+    properties['Level of Risk'] = { select: { name: levelOfRisk } };
+  }
+  if (typeOfScope) {
+    properties['Type of Scope '] = { select: { name: typeOfScope } };
+  }
+  if (status) {
+    properties.Status = { status: { name: status } };
+  }
+  if (text) {
+    properties.Text = { rich_text: [{ text: { content: text } }] };
+  }
+
+  const page = await notion.pages.create({
+    parent: { database_id: dbId },
+    properties,
+  });
+  return { id: page.id, url: page.url };
+}
+
+async function updateItemDates({ pageId, start, end }) {
+  const dateValue = start ? { start, end: end || null } : null;
+  await notion.pages.update({
+    page_id: pageId,
+    properties: { Date: { date: dateValue } },
+  });
+  return { ok: true };
+}
+
 module.exports = {
   queryNotionDatabase,
   getMergedRoadmap,
@@ -637,4 +732,7 @@ module.exports = {
   pageToRow,
   pushMeetingToNotion,
   pushPersonNotesToNotion,
+  updateItemDates,
+  pushProgressUpdate,
+  createWorkstreamItem,
 };
