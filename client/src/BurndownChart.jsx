@@ -93,7 +93,7 @@ function PercentBadge({ pct, totalPoints, currentPoints }) {
       <div className="pct-ring" style={{ background: `conic-gradient(${color} ${pct * 360}deg, var(--bg-hover) ${pct * 360}deg)` }}>
         <span className="pct-value">{formatPct(pct)}</span>
       </div>
-      <span className="pct-label">{currentPoints ?? 0} / {totalPoints ?? 0} pts</span>
+      <span className="pct-label">{Math.round((currentPoints ?? 0) * 10) / 10} / {totalPoints ?? 0} pts</span>
     </div>
   );
 }

@@ -84,7 +84,7 @@ export function buildTaskSeriesFromMerged(roadmapRows) {
     for (const pt of progressData) {
       let effectiveDate = pt.date;
       let early = false;
-      if (start && pt.date < start) {
+      if (start && pt.date <= start) {
         early = true;
         const nextDay = new Date(start + 'T12:00:00Z');
         nextDay.setUTCDate(nextDay.getUTCDate() + 1);
@@ -178,7 +178,13 @@ export function rollupBurndown(taskSeries, hierarchyNode, dateOverride) {
     if (pt.date === dateStarted && pt.points === totalPoints) continue;
     const prev = actualData[actualData.length - 1];
     if (prev && pt.points === prev.points && pt.updates.length === 0) continue;
-    actualData.push(pt);
+    if (pt.date === dateStarted && pt.points < totalPoints) {
+      const nextDay = new Date(dateStarted + 'T12:00:00Z');
+      nextDay.setUTCDate(nextDay.getUTCDate() + 1);
+      actualData.push({ ...pt, date: nextDay.toISOString().slice(0, 10) });
+    } else {
+      actualData.push(pt);
+    }
   }
   const idealLine = dateStarted && dateExpectedComplete
     ? [{ date: dateStarted, points: totalPoints }, { date: dateExpectedComplete, points: 0 }]

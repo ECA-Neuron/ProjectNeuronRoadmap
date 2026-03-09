@@ -130,9 +130,9 @@ export default function TaskDetail({ task, openIssues, lateBlockers }) {
           </div>
         )}
         <div className="task-stats">
-          <span>Total: {task.totalPoints ?? 0} pts</span>
-          <span>Current: {task.currentPoints ?? 0} pts</span>
-          <span>Remaining: {task.remainingPoints ?? 0} pts</span>
+          <span>Total: {Math.round((task.totalPoints ?? 0) * 10) / 10} pts</span>
+          <span>Current: {Math.round((task.currentPoints ?? 0) * 10) / 10} pts</span>
+          <span>Remaining: {Math.round((task.remainingPoints ?? 0) * 10) / 10} pts</span>
           {task.assignee && task.assignee !== 'Unassigned' && (
             <span className="task-assignee">Assigned: {task.assignee}</span>
           )}
