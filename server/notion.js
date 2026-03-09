@@ -7,6 +7,31 @@ const notion = new Client({
   auth: process.env.NOTION_SECRET,
 });
 
+let _notionUsersCache = null;
+async function getNotionUsers() {
+  if (_notionUsersCache) return _notionUsersCache;
+  const users = [];
+  let cursor;
+  do {
+    const resp = await notion.users.list({ start_cursor: cursor, page_size: 100 });
+    users.push(...resp.results);
+    cursor = resp.has_more ? resp.next_cursor : undefined;
+  } while (cursor);
+  _notionUsersCache = users;
+  return users;
+}
+
+async function resolveNotionUser(nameStr) {
+  if (!nameStr) return null;
+  const users = await getNotionUsers();
+  const target = nameStr.trim().toLowerCase();
+  const match = users.find(u =>
+    (u.name ?? '').toLowerCase() === target ||
+    (u.person?.email ?? '').toLowerCase().startsWith(target.split(' ')[0])
+  );
+  return match ? { object: 'user', id: match.id } : null;
+}
+
 function parseProperty(prop) {
   if (!prop) return null;
   if (prop.type === 'title' && prop.title?.length) return prop.title.map(t => t.plain_text).join('');
@@ -724,6 +749,82 @@ async function updateItemDates({ pageId, start, end }) {
   return { ok: true };
 }
 
+async function updateIssue({ pageId, status, severity, assignedTo }) {
+  const properties = {};
+  if (status != null) {
+    properties.Status = { status: { name: status } };
+  }
+  if (severity != null) {
+    properties['Severity '] = { select: { name: severity } };
+  }
+  if (assignedTo != null) {
+    const user = await resolveNotionUser(assignedTo);
+    if (user) {
+      properties['Assigned To'] = { people: [user] };
+    }
+  }
+  if (Object.keys(properties).length === 0) throw new Error('No fields to update');
+  await notion.pages.update({ page_id: pageId, properties });
+  return { ok: true };
+}
+
+async function addIssueComment({ pageId, comment }) {
+  if (!comment) throw new Error('Comment text is required');
+  await notion.blocks.children.append({
+    block_id: pageId,
+    children: [
+      {
+        object: 'block',
+        type: 'paragraph',
+        paragraph: { rich_text: [{ text: { content: comment } }] },
+      },
+    ],
+  });
+  return { ok: true };
+}
+
+async function createIssue({ name, description, status, severity, assignedTo, relatedTaskId, deliverable, epic, category }) {
+  const dbId = process.env.NOTION_THIRD_DB_ID;
+  if (!dbId) throw new Error('NOTION_THIRD_DB_ID is not set');
+  if (!name) throw new Error('Issue name is required');
+
+  const properties = {
+    'Issue Name': { title: [{ text: { content: name } }] },
+  };
+  if (description) {
+    properties['Issue Description'] = { rich_text: [{ text: { content: description } }] };
+  }
+  if (status) {
+    properties.Status = { status: { name: status } };
+  }
+  if (severity) {
+    properties['Severity '] = { select: { name: severity } };
+  }
+  if (assignedTo) {
+    const user = await resolveNotionUser(assignedTo);
+    if (user) {
+      properties['Assigned To'] = { people: [user] };
+    }
+  }
+  if (relatedTaskId) {
+    properties['Related Task'] = { relation: [{ id: relatedTaskId }] };
+  }
+  if (deliverable) {
+    properties['Related Deliverable'] = { rich_text: [{ text: { content: deliverable } }] };
+  }
+  if (epic) {
+    properties['Related Epic'] = { rich_text: [{ text: { content: epic } }] };
+  }
+  if (category) {
+    properties['Issue Category'] = { select: { name: category } };
+  }
+
+  properties['Date Created'] = { date: { start: new Date().toISOString().slice(0, 10) } };
+
+  const page = await notion.pages.create({ parent: { database_id: dbId }, properties });
+  return { ok: true, id: page.id, url: page.url };
+}
+
 module.exports = {
   queryNotionDatabase,
   getMergedRoadmap,
@@ -735,4 +836,7 @@ module.exports = {
   updateItemDates,
   pushProgressUpdate,
   createWorkstreamItem,
+  updateIssue,
+  addIssueComment,
+  createIssue,
 };

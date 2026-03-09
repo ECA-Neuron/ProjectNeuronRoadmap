@@ -265,7 +265,7 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
   const totalOffTrack = offTrack.tasks + offTrack.deliverables + offTrack.epics + offTrack.workstreams;
 
   const [deliveryDate, setDeliveryDate] = useState(() => {
-    try { return localStorage.getItem(STORAGE_KEY) || latestEnd || ''; } catch { return latestEnd || ''; }
+    try { return localStorage.getItem(STORAGE_KEY) || '2027-12-31'; } catch { return '2027-12-31'; }
   });
   const [locked, setLocked] = useState(() => {
     try { return localStorage.getItem(LOCK_KEY) === 'true'; } catch { return true; }

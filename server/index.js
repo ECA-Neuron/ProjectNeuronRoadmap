@@ -29,7 +29,7 @@ for (const envPath of envPaths) {
 }
 const express = require('express');
 const cors = require('cors');
-const { queryNotionDatabase, getMergedRoadmap, pushMeetingToNotion, pushPersonNotesToNotion, updateItemDates, pushProgressUpdate, createWorkstreamItem } = require('./notion');
+const { queryNotionDatabase, getMergedRoadmap, pushMeetingToNotion, pushPersonNotesToNotion, updateItemDates, pushProgressUpdate, createWorkstreamItem, updateIssue, addIssueComment, createIssue } = require('./notion');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -192,6 +192,51 @@ app.post('/api/task/:id/progress', async (req, res) => {
   } catch (err) {
     console.error('Progress update error:', err);
     res.status(500).json({ error: err.message || 'Failed to push progress update' });
+  }
+});
+
+app.post('/api/issue', async (req, res) => {
+  try {
+    const { name, description, status, severity, assignedTo, relatedTaskId, deliverable, epic, category } = req.body;
+    if (!name) return res.status(400).json({ error: 'Issue name is required' });
+    const result = await createIssue({ name, description, status, severity, assignedTo, relatedTaskId, deliverable, epic, category });
+    cache.data = null;
+    cache.timestamp = 0;
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('Issue create error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create issue' });
+  }
+});
+
+app.patch('/api/issue/:id', async (req, res) => {
+  try {
+    const pageId = req.params.id;
+    const { status, severity, assignedTo } = req.body;
+    if (!pageId) return res.status(400).json({ error: 'Issue ID is required' });
+    await updateIssue({ pageId, status, severity, assignedTo });
+    cache.data = null;
+    cache.timestamp = 0;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Issue update error:', err);
+    res.status(500).json({ error: err.message || 'Failed to update issue' });
+  }
+});
+
+app.post('/api/issue/:id/comment', async (req, res) => {
+  try {
+    const pageId = req.params.id;
+    const { comment } = req.body;
+    if (!pageId) return res.status(400).json({ error: 'Issue ID is required' });
+    if (!comment) return res.status(400).json({ error: 'Comment is required' });
+    await addIssueComment({ pageId, comment });
+    cache.data = null;
+    cache.timestamp = 0;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Issue comment error:', err);
+    res.status(500).json({ error: err.message || 'Failed to add comment' });
   }
 });
 

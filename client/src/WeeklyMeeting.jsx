@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { isSeriesOffTrack } from './burndown';
+import NewIssueModal from './NewIssueModal';
 
 function formatDate(str) {
   if (!str) return '';
@@ -140,7 +141,273 @@ function StaleTasksDropdown({ staleCount, totalAssigned, staleTasks, onNavigateT
   );
 }
 
-export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask }) {
+const SEVERITY_OPTIONS = ['Low', 'Medium', 'High', 'Critical'];
+const STATUS_OPTIONS = ['Open', 'In Progress', 'Resolved', 'Closed'];
+
+function MeetingIssuesSection({ openIssues, rows, hierarchy, onNavigateToTask, onRefresh }) {
+  const [editingId, setEditingId] = useState(null);
+  const [editFields, setEditFields] = useState({});
+  const [newComment, setNewComment] = useState('');
+  const [saving, setSaving] = useState(null);
+  const [expandedIds, setExpandedIds] = useState(new Set());
+  const [overrides, setOverrides] = useState({});
+  const [showNewIssue, setShowNewIssue] = useState(false);
+  const [optimisticIssues, setOptimisticIssues] = useState([]);
+
+  const addOptimisticIssue = useCallback((issue) => {
+    setOptimisticIssues(prev => [...prev, issue]);
+  }, []);
+
+  const toggleExpand = useCallback((id) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const startEdit = useCallback((issue) => {
+    setEditingId(issue.id);
+    setExpandedIds(prev => new Set(prev).add(issue.id));
+    setEditFields({
+      status: issue.status || '',
+      severity: issue.severity || '',
+      assignedTo: issue.assignedTo || '',
+    });
+    setNewComment('');
+    setSaving(null);
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    setEditingId(null);
+    setEditFields({});
+    setNewComment('');
+    setSaving(null);
+  }, []);
+
+  const saveEdit = useCallback(async (issue) => {
+    const changed = {};
+    if (editFields.status && editFields.status !== (issue.status || '')) changed.status = editFields.status;
+    if (editFields.severity && editFields.severity !== (issue.severity || '')) changed.severity = editFields.severity;
+    if (editFields.assignedTo !== undefined && editFields.assignedTo !== (issue.assignedTo || '')) changed.assignedTo = editFields.assignedTo;
+
+    const hasFieldChanges = Object.keys(changed).length > 0;
+    const hasComment = newComment.trim().length > 0;
+    if (!hasFieldChanges && !hasComment) { cancelEdit(); return; }
+
+    setSaving('saving');
+
+    setOverrides(prev => {
+      const cur = prev[issue.id] ?? {};
+      const next = { ...cur, ...changed };
+      if (hasComment) next._newComments = [...(cur._newComments ?? []), { text: newComment.trim(), createdTime: new Date().toISOString() }];
+      return { ...prev, [issue.id]: next };
+    });
+
+    try {
+      if (hasFieldChanges) {
+        const resp = await fetch(`/api/issue/${issue.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(changed),
+        });
+        if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error || 'Update failed'); }
+      }
+      if (hasComment) {
+        const resp = await fetch(`/api/issue/${issue.id}/comment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ comment: newComment.trim() }),
+        });
+        if (!resp.ok) { const e = await resp.json().catch(() => ({})); throw new Error(e.error || 'Comment failed'); }
+      }
+      setSaving('saved');
+      setNewComment('');
+      setTimeout(() => {
+        cancelEdit();
+        setOverrides({});
+        if (onRefresh) onRefresh();
+      }, 1200);
+    } catch (err) {
+      setSaving('error:' + err.message);
+    }
+  }, [editFields, newComment, cancelEdit, onRefresh]);
+
+  const merged = useMemo(() => {
+    const base = openIssues.map(iss => {
+      const ov = overrides[iss.id];
+      if (!ov) return iss;
+      const m = { ...iss };
+      if (ov.status) m.status = ov.status;
+      if (ov.severity) m.severity = ov.severity;
+      if (ov.assignedTo !== undefined) m.assignedTo = ov.assignedTo;
+      if (ov._newComments?.length) m.comments = [...(iss.comments ?? []), ...ov._newComments];
+      return m;
+    });
+    return [...base, ...optimisticIssues];
+  }, [openIssues, overrides, optimisticIssues]);
+
+  const sorted = useMemo(() => [...merged].sort((a, b) => {
+    const order = { high: 0, medium: 1, low: 2 };
+    return (order[(a.severity ?? '').toLowerCase()] ?? 3) - (order[(b.severity ?? '').toLowerCase()] ?? 3);
+  }), [merged]);
+
+  return (
+    <div className="meeting-subsection">
+      <div className="meeting-issue-header-row">
+        <h4 className="meeting-sub-header">Open Issues ({openIssues.length})</h4>
+        <button type="button" className="new-issue-btn new-issue-btn-sm" onClick={() => setShowNewIssue(true)}>+ New Issue</button>
+      </div>
+      {showNewIssue && (
+        <NewIssueModal hierarchy={hierarchy} roadmapRows={rows} onClose={() => setShowNewIssue(false)} onRefresh={() => { setOverrides({}); setOptimisticIssues([]); if (onRefresh) onRefresh(); }} onOptimisticCreate={addOptimisticIssue} />
+      )}
+      <table className="meeting-table meeting-table-compact">
+        <thead>
+          <tr><th>Issue</th><th>Assigned To</th><th>Severity</th><th>Status</th><th>Workstream</th><th>Task / Deliverable</th><th></th></tr>
+        </thead>
+        <tbody>
+          {sorted.map((issue, i) => {
+            let relatedTask = issue.relatedTaskId
+              ? rows.find(t => t.taskId === issue.relatedTaskId)
+              : null;
+            const taskLabel = issue.relatedTaskName || issue.taskName || issue.deliverable || '-';
+            if (!relatedTask && taskLabel !== '-') {
+              const label = taskLabel.trim().toLowerCase();
+              relatedTask = rows.find(t => (t.taskName ?? '').trim().toLowerCase() === label) || null;
+              if (!relatedTask) {
+                for (const ws of (hierarchy ?? [])) {
+                  for (const epic of (ws.epics ?? [])) {
+                    if (epic.name?.trim().toLowerCase() === label && epic.tasks?.length > 0) {
+                      relatedTask = epic.tasks[0]; break;
+                    }
+                    for (const del of (epic.deliverables ?? [])) {
+                      if (del.name?.trim().toLowerCase() === label && del.tasks?.length > 0) {
+                        relatedTask = del.tasks[0]; break;
+                      }
+                    }
+                    if (relatedTask) break;
+                  }
+                  if (relatedTask) break;
+                }
+              }
+            }
+
+            const isEditing = editingId === issue.id;
+            const isExpanded = expandedIds.has(issue.id);
+            const comments = issue.comments ?? [];
+            const hasComments = comments.length > 0;
+
+            return (
+              <React.Fragment key={issue.id || i}>
+                <tr className={isEditing ? 'issue-row-editing' : ''}>
+                  <td>
+                    <div className="meeting-issue-name-row">
+                      <button
+                        type="button"
+                        className={`issue-comment-toggle-sm ${hasComments ? 'has-comments' : ''}`}
+                        onClick={() => toggleExpand(issue.id)}
+                        title={hasComments ? `${comments.length} comment${comments.length > 1 ? 's' : ''}` : 'No comments'}
+                      >
+                        <span>{isExpanded ? '▾' : '▸'}</span>
+                        <span>💬</span>
+                        <span className="issue-comment-count-sm">{comments.length}</span>
+                      </button>
+                      {issue.url ? (
+                        <a href={issue.url} target="_blank" rel="noopener noreferrer" className="meeting-task-link">
+                          {issue.name || issue.issueName || '-'}
+                        </a>
+                      ) : (issue.name || issue.issueName || '-')}
+                    </div>
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <input className="issue-edit-input" type="text" value={editFields.assignedTo} onChange={e => setEditFields(f => ({ ...f, assignedTo: e.target.value }))} placeholder="Assignee" />
+                    ) : (issue.assignedTo || '-')}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <select className="issue-edit-select" value={editFields.severity} onChange={e => setEditFields(f => ({ ...f, severity: e.target.value }))}>
+                        <option value="">-</option>
+                        {SEVERITY_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (
+                      <span className={`meeting-severity meeting-severity-${(issue.severity ?? '').toLowerCase()}`}>
+                        {issue.severity || '-'}
+                      </span>
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <select className="issue-edit-select" value={editFields.status} onChange={e => setEditFields(f => ({ ...f, status: e.target.value }))}>
+                        <option value="">-</option>
+                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    ) : (issue.status || '-')}
+                  </td>
+                  <td>{issue.workstream || '-'}</td>
+                  <td>
+                    {relatedTask ? (
+                      <button type="button" className="meeting-task-link" onClick={() => onNavigateToTask?.(relatedTask)}>
+                        {taskLabel}
+                      </button>
+                    ) : taskLabel}
+                  </td>
+                  <td className="issue-actions-cell">
+                    {!isEditing && (
+                      <button type="button" className="issue-edit-btn" onClick={() => startEdit(issue)} title="Edit issue">Edit</button>
+                    )}
+                  </td>
+                </tr>
+                {isExpanded && (
+                  <tr className="issue-comments-row">
+                    <td colSpan={7}>
+                      <div className="issue-comments-panel">
+                        {hasComments && (
+                          <>
+                            <div className="issue-comments-title">Comments ({comments.length})</div>
+                            {comments.map((c, ci) => (
+                              <div key={ci} className="issue-comment-item">
+                                <div className="issue-comment-text">{c.text}</div>
+                                <div className="issue-comment-meta">{formatDate(c.createdTime)}</div>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        {!hasComments && !isEditing && (
+                          <div className="issue-comments-empty">No comments yet.</div>
+                        )}
+                        {isEditing && (
+                          <div className="issue-edit-panel">
+                            <textarea
+                              className="issue-edit-textarea"
+                              rows={1}
+                              value={newComment}
+                              onChange={e => setNewComment(e.target.value)}
+                              placeholder="Add a comment to push to Notion..."
+                            />
+                            <div className="issue-edit-actions">
+                              {saving === 'saving' && <span className="issue-edit-status issue-edit-saving">Saving...</span>}
+                              {saving === 'saved' && <span className="issue-edit-status issue-edit-saved">Saved!</span>}
+                              {saving?.startsWith('error:') && <span className="issue-edit-status issue-edit-error">{saving.slice(6)}</span>}
+                              <button type="button" className="issue-edit-save" onClick={() => saveEdit(issue)} disabled={saving === 'saving'}>Save & Push</button>
+                              <button type="button" className="issue-edit-cancel" onClick={cancelEdit}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRefresh }) {
   const rows = data?.roadmapRows ?? [];
   const openIssues = (data?.openIssues ?? []).filter(
     i => (i.status ?? '').toLowerCase() !== 'closed' && (i.status ?? '').toLowerCase() !== 'resolved'
@@ -618,72 +885,13 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask }) {
             )}
 
             {openIssues.length > 0 && (
-              <div className="meeting-subsection">
-                <h4 className="meeting-sub-header">Open Issues ({openIssues.length})</h4>
-                <table className="meeting-table meeting-table-compact">
-                  <thead>
-                    <tr><th>Issue</th><th>Assigned To</th><th>Severity</th><th>Workstream</th><th>Task / Deliverable</th></tr>
-                  </thead>
-                  <tbody>
-                    {[...openIssues]
-                      .sort((a, b) => {
-                        const order = { high: 0, medium: 1, low: 2 };
-                        return (order[(a.severity ?? '').toLowerCase()] ?? 3) - (order[(b.severity ?? '').toLowerCase()] ?? 3);
-                      })
-                      .map((issue, i) => {
-                        let relatedTask = issue.relatedTaskId
-                          ? rows.find(t => t.taskId === issue.relatedTaskId)
-                          : null;
-                        const taskLabel = issue.relatedTaskName || issue.taskName || issue.deliverable || '-';
-                        if (!relatedTask && taskLabel !== '-') {
-                          const label = taskLabel.trim().toLowerCase();
-                          relatedTask = rows.find(t => (t.taskName ?? '').trim().toLowerCase() === label) || null;
-                          if (!relatedTask) {
-                            for (const ws of (data?.hierarchy ?? [])) {
-                              for (const epic of (ws.epics ?? [])) {
-                                if (epic.name?.trim().toLowerCase() === label && epic.tasks?.length > 0) {
-                                  relatedTask = epic.tasks[0]; break;
-                                }
-                                for (const del of (epic.deliverables ?? [])) {
-                                  if (del.name?.trim().toLowerCase() === label && del.tasks?.length > 0) {
-                                    relatedTask = del.tasks[0]; break;
-                                  }
-                                }
-                                if (relatedTask) break;
-                              }
-                              if (relatedTask) break;
-                            }
-                          }
-                        }
-                        return (
-                          <tr key={i}>
-                            <td>
-                              {issue.url ? (
-                                <a href={issue.url} target="_blank" rel="noopener noreferrer" className="meeting-task-link">
-                                  {issue.name || issue.issueName || '-'}
-                                </a>
-                              ) : (issue.name || issue.issueName || '-')}
-                            </td>
-                            <td>{issue.assignedTo || '-'}</td>
-                            <td>
-                              <span className={`meeting-severity meeting-severity-${(issue.severity ?? '').toLowerCase()}`}>
-                                {issue.severity || '-'}
-                              </span>
-                            </td>
-                            <td>{issue.workstream || '-'}</td>
-                            <td>
-                              {relatedTask ? (
-                                <button type="button" className="meeting-task-link" onClick={() => onNavigateToTask?.(relatedTask)}>
-                                  {taskLabel}
-                                </button>
-                              ) : taskLabel}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
+              <MeetingIssuesSection
+                openIssues={openIssues}
+                rows={rows}
+                hierarchy={data?.hierarchy}
+                onNavigateToTask={onNavigateToTask}
+                onRefresh={onRefresh}
+              />
             )}
 
             {blockedTasks.length > 0 && (

@@ -338,13 +338,14 @@ export default function App() {
         </aside>
         <main className="main">
           {!selected && data && activePage === 'issues' && (
-            <OpenIssuesPage issues={data?.openIssues ?? []} />
+            <OpenIssuesPage issues={data?.openIssues ?? []} hierarchy={data?.hierarchy ?? []} roadmapRows={data?.roadmapRows ?? []} onRefresh={() => fetchRoadmap(true)} />
           )}
           {!selected && data && activePage === 'meeting' && (
             <WeeklyMeeting
               data={data}
               taskSeries={taskSeries}
               onNavigateToTask={navigateToTask}
+              onRefresh={() => fetchRoadmap(true)}
             />
           )}
           {!selected && data && activePage === 'timeline' && (
