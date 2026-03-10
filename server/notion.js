@@ -210,7 +210,7 @@ async function getMergedRoadmap(extraProgressRows = []) {
     }
     const deliverable = ancestry.deliverable || trimStr(wsRow['Deliverable Level'] ?? '') || 'Unknown';
 
-    const assignee = trimStr(wsRow.Assign ?? wsRow.assign ?? wsRow.Assignee ?? wsRow.assignee ?? '') || 'Unassigned';
+    const assignee = (trimStr(wsRow.Assign ?? wsRow.assign ?? wsRow.Assignee ?? wsRow.assignee ?? '') || 'Unassigned').replace(/^@/, '');
 
     const blockedByIds = wsRow['__rel_Blocked by'] ?? [];
     const blockingIds = wsRow['__rel_Blocking'] ?? [];
@@ -260,7 +260,7 @@ async function getMergedRoadmap(extraProgressRows = []) {
             date: r['Date Added'] ?? r.lastEdited ?? r.created,
             updateNumber: r['Update number'] ?? r.id,
             idNum: trimStr(r['Id Num'] ?? ''),
-            userName: trimStr(r['Update Name'] ?? ''),
+            userName: (trimStr(r['Update Name'] ?? '')).replace(/^@/, ''),
             comment: trimStr(r['Reason for Update'] ?? ''),
             currentPoints: parseFloat(trimStr(r['Current Points '] ?? r['Current Points'] ?? '0')) || 0,
             pointsAdded: parseFloat(trimStr(r['Points Added'] ?? r.pointsAdded ?? '0')) || 0,
@@ -271,7 +271,8 @@ async function getMergedRoadmap(extraProgressRows = []) {
             logWorkstream: trimStr(r['Workstream'] ?? ''),
             logEpic: trimStr(r['Epic'] ?? ''),
           };
-        }),
+        })
+        .filter((r, i, arr) => i === 0 || r.percentComplete !== arr[i - 1].percentComplete),
     };
   });
 

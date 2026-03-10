@@ -579,10 +579,13 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
 
     const allAssigned = {};
     for (const task of rows) {
-      const name = task.assignee ?? 'Unknown';
-      if (!passesFilter(name)) continue;
-      if (!allAssigned[name]) allAssigned[name] = new Set();
-      allAssigned[name].add(task.taskId);
+      const raw = task.assignee ?? 'Unknown';
+      const names = raw.includes(',') ? raw.split(',').map(n => n.trim()).filter(Boolean) : [raw];
+      for (const name of names) {
+        if (!passesFilter(name)) continue;
+        if (!allAssigned[name]) allAssigned[name] = new Set();
+        allAssigned[name].add(task.taskId);
+      }
     }
 
     const updatedInRange = new Set(filteredUpdates.map(u => u.taskId));

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
 import { computeOffTrackCounts, computeLateBlockers } from './burndown';
 
 function formatDateShortNoYear(str) {
@@ -367,6 +367,25 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
     return { name: ws.name, totalPoints: tp, currentPoints: cp, pct: tp > 0 ? cp / tp : 0 };
   });
 
+  const personBreakdown = useMemo(() => {
+    const map = {};
+    for (const t of rows) {
+      const name = (t.assignee ?? 'Unassigned').trim();
+      if (!name) continue;
+      const names = name.includes(',') ? name.split(',').map(n => n.trim()).filter(Boolean) : [name];
+      const tp = t.totalPoints ?? 0;
+      const cp = t.currentPoints ?? 0;
+      for (const n of names) {
+        if (!map[n]) map[n] = { name: n, assigned: 0, burned: 0 };
+        map[n].assigned += tp;
+        map[n].burned += cp;
+      }
+    }
+    return Object.values(map)
+      .map(p => ({ ...p, assigned: Math.round(p.assigned * 10) / 10, burned: Math.round(p.burned * 10) / 10 }))
+      .sort((a, b) => b.assigned - a.assigned);
+  }, [rows]);
+
   const recentUpdates = useMemo(() => {
     const MAX_RECENT = 15;
     return rows
@@ -509,6 +528,46 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
           ))}
         </div>
       </div>
+
+      {wsBreakdown.length > 0 && (
+        <div className="home-ws-chart">
+          <h3>Points by Workstream</h3>
+          <ResponsiveContainer width="100%" height={Math.max(220, wsBreakdown.length * 44)}>
+            <BarChart data={wsBreakdown} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+              <XAxis type="number" tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
+              <YAxis type="category" dataKey="name" width={150} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                formatter={(value, name) => [Math.round(value * 10) / 10, name]}
+              />
+              <Legend />
+              <Bar dataKey="totalPoints" name="Total" fill="var(--accent)" radius={[0, 4, 4, 0]} barSize={18} />
+              <Bar dataKey="currentPoints" name="Completed" fill="var(--green)" radius={[0, 4, 4, 0]} barSize={18} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {personBreakdown.length > 0 && (
+        <div className="home-ws-chart">
+          <h3>Points by Person</h3>
+          <ResponsiveContainer width="100%" height={Math.max(220, personBreakdown.length * 44)}>
+            <BarChart data={personBreakdown} layout="vertical" margin={{ top: 5, right: 30, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" horizontal={false} />
+              <XAxis type="number" tick={{ fill: 'var(--text-muted)', fontSize: 12 }} />
+              <YAxis type="category" dataKey="name" width={150} tick={{ fill: 'var(--text-secondary)', fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                formatter={(value, name) => [Math.round(value * 10) / 10, name]}
+              />
+              <Legend />
+              <Bar dataKey="assigned" name="Assigned" fill="var(--accent)" radius={[0, 4, 4, 0]} barSize={18} />
+              <Bar dataKey="burned" name="Burned" fill="var(--green)" radius={[0, 4, 4, 0]} barSize={18} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       <div className="home-recent-updates">
         <h3>Recent Task Updates</h3>

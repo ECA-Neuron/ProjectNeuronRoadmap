@@ -9,6 +9,7 @@ import OpenIssuesPage from './OpenIssuesPage';
 import WeeklyMeeting from './WeeklyMeeting';
 import TimelineView from './TimelineView';
 import CreateItemPage from './CreateItemPage';
+import AdminPage from './AdminPage';
 import { buildTaskSeriesFromMerged, rollupBurndown, computeLateBlockers } from './burndown';
 import DateChangeBanner from './DateChangeBanner';
 import { detectAndPersistRebaselines, detectAllLevelDateChanges } from './rebaseline';
@@ -299,6 +300,14 @@ export default function App() {
                 <span className="nav-tab-icon">&#43;</span>
                 <span className="nav-tab-label">Create</span>
               </button>
+              <button
+                type="button"
+                className={`nav-tab ${!selected && activePage === 'admin' ? 'active' : ''}`}
+                onClick={() => { setSelected(null); setActivePage('admin'); }}
+              >
+                <span className="nav-tab-icon">&#128274;</span>
+                <span className="nav-tab-label">Admin</span>
+              </button>
             </div>
           </div>
           <div className="sidebar-filters">
@@ -360,6 +369,9 @@ export default function App() {
               hierarchy={data.hierarchy ?? []}
               onRefresh={() => fetchRoadmap(true)}
             />
+          )}
+          {!selected && activePage === 'admin' && (
+            <AdminPage roadmapRows={data?.roadmapRows ?? []} />
           )}
           {!selected && data && activePage === 'home' && (
             <ProjectHome
