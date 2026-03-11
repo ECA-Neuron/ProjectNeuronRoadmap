@@ -555,16 +555,37 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
   }, [rows, taskSeries, selectedPeople]);
 
   const blockedTasks = useMemo(() => {
+    const rowById = {};
+    for (const r of rows) { if (r.taskId) rowById[r.taskId] = r; }
+
     return rows
       .filter(t => t.blockedBy && t.blockedBy.length > 0 && passesFilter(t.assignee ?? 'Unknown'))
-      .map(t => ({
-        taskName: t.taskName,
-        workstream: t.Workstream ?? '',
-        blockedByNames: t.blockedBy.map(b => b.name).join(', '),
-        pct: t.percentComplete ?? 0,
-        task: t,
-      }));
-  }, [rows, selectedPeople]);
+      .filter(t => {
+        return t.blockedBy.some(b => {
+          const blocker = rowById[b.id];
+          if (!blocker) return false;
+          const key = `${blocker.Workstream ?? ''}|${blocker.Epic ?? ''}|${blocker.Deliverable ?? ''}|${blocker.taskName ?? ''}`;
+          const s = taskSeries[key];
+          return s && isSeriesOffTrack(s);
+        });
+      })
+      .map(t => {
+        const atRiskBlockers = t.blockedBy.filter(b => {
+          const blocker = rowById[b.id];
+          if (!blocker) return false;
+          const key = `${blocker.Workstream ?? ''}|${blocker.Epic ?? ''}|${blocker.Deliverable ?? ''}|${blocker.taskName ?? ''}`;
+          const s = taskSeries[key];
+          return s && isSeriesOffTrack(s);
+        });
+        return {
+          taskName: t.taskName,
+          workstream: t.Workstream ?? '',
+          blockedByNames: atRiskBlockers.map(b => b.name).join(', '),
+          pct: t.percentComplete ?? 0,
+          task: t,
+        };
+      });
+  }, [rows, taskSeries, selectedPeople]);
 
   // ── Section 3: Per-Person Breakdown ──
 
