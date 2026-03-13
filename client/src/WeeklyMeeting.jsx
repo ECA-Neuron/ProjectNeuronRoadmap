@@ -764,6 +764,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
         pct: u.pct,
         comment: u.comment,
       }));
+      const totalBurned = Math.round(notesPersonUpdates.reduce((s, u) => s + (u.deltaPts > 0 ? u.deltaPts : 0), 0) * 10) / 10;
       const res = await fetch('/api/meeting/push-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -773,6 +774,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
           thisWeekNotes: notes.thisWeekText || '',
           nextWeekNotes: notes.nextWeekText || '',
           updates,
+          totalBurned,
         }),
       });
       const data = await res.json();

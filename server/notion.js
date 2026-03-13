@@ -604,7 +604,7 @@ async function pushMeetingToNotion({ weekLabel, weekDate, openIssues }) {
   return { url: page.url, id: page.id };
 }
 
-async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, nextWeekNotes, updates, notes, actionItems }) {
+async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, nextWeekNotes, updates, totalBurned, notes, actionItems }) {
   const allBlocks = [];
   let cursor = undefined;
   do {
@@ -670,6 +670,16 @@ async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, next
         bulleted_list_item: { rich_text: [{ text: { content: line } }] },
       });
     }
+  }
+
+  if (totalBurned != null && totalBurned > 0) {
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: {
+        rich_text: [{ text: { content: `Points burned: ${totalBurned}` }, annotations: { bold: true } }],
+      },
+    });
   }
 
   blocks.push(...htmlToNotionBlocks(effectiveThisWeek));
