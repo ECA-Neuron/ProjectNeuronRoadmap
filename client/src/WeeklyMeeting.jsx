@@ -726,27 +726,9 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
   const pushToNotion = async () => {
     setPushState({ status: 'pushing', url: null, error: null });
     try {
-      const generalNotes = loadNotes(wk, 'General');
       const payload = {
         weekLabel: `Weekly Insights Review ${new Date(rangeBounds.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`,
         weekDate: rangeBounds.start,
-        people: (() => {
-          const byFirst = new Map();
-          for (const p of personBreakdown) {
-            const firsts = extractFirstNames(p.name);
-            if (firsts.length === 0) firsts.push(p.name);
-            for (const raw of firsts) {
-              const key = raw.charAt(0).toUpperCase() + raw.slice(1);
-              if (!byFirst.has(key)) byFirst.set(key, { name: key, updates: [], totalBurned: 0, staleCount: 0, totalAssigned: 0 });
-              const entry = byFirst.get(key);
-              entry.updates.push(...p.updates.map(u => ({ taskName: u.taskName, prevPct: u.prevPct, pct: u.pct, comment: u.comment })));
-              entry.totalBurned += p.totalBurned;
-              entry.staleCount += p.staleCount;
-              entry.totalAssigned += p.totalAssigned;
-            }
-          }
-          return [...byFirst.values()];
-        })(),
         openIssues: openIssues.map(issue => ({
           name: issue.name || issue.issueName || '',
           severity: issue.severity || '',
@@ -754,8 +736,6 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
           workstream: issue.workstream || '',
           taskName: issue.taskName || issue.deliverable || '',
         })),
-        thisWeekNotes: generalNotes.thisWeekText || '',
-        nextWeekNotes: generalNotes.nextWeekText || '',
       };
       const res = await fetch('/api/meeting/push', {
         method: 'POST',
@@ -835,15 +815,17 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
             className={`meeting-push-btn${pushState.status === 'pushing' ? ' pushing' : ''}`}
             onClick={pushToNotion}
             disabled={pushState.status === 'pushing'}
+            title="Creates the Notion page with open issues. Use the Meeting Notes section to push per-person notes."
           >
-            {pushState.status === 'pushing' ? 'Pushing…' : 'Push to Notion'}
+            {pushState.status === 'pushing' ? 'Creating…' : pushedPageId ? 'Page Created' : 'Create Notion Page'}
           </button>
         </div>
       </div>
       {pushState.status === 'success' && (
         <div className="meeting-toast meeting-toast-success">
-          Pushed to Notion!{' '}
+          Notion page created!{' '}
           <a href={pushState.url} target="_blank" rel="noopener noreferrer">Open page &rarr;</a>
+          {' '}&mdash; now push notes per person below.
         </div>
       )}
       {pushState.status === 'error' && (
@@ -1086,7 +1068,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
               </button>
             </div>
             {!pushedPageId && (
-              <p className="meeting-notes-hint">Push the full meeting first (top button) before pushing individual notes.</p>
+              <p className="meeting-notes-hint">Create the Notion page first (top button) before pushing individual notes.</p>
             )}
             {notesPushState.status === 'success' && (
               <div className="meeting-toast meeting-toast-success" style={{ marginBottom: 10 }}>Notes pushed to Notion!</div>
