@@ -2707,6 +2707,12 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   margin: 0;
   padding: 8px 0;
 }
+.meeting-notes-general {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 
 .meeting-action-header {
   display: flex;

@@ -42,10 +42,10 @@ function loadNotes(wk, person) {
         parsed.nextWeekText = parsed.nextWeekText ?? '';
         delete parsed.text;
       }
-      return { thisWeekText: parsed.thisWeekText ?? '', nextWeekText: parsed.nextWeekText ?? '', items: parsed.items ?? [] };
+      return { thisWeekText: parsed.thisWeekText ?? '', nextWeekText: parsed.nextWeekText ?? '', generalText: parsed.generalText ?? '', items: parsed.items ?? [] };
     }
   } catch {}
-  return { thisWeekText: '', nextWeekText: '', items: [] };
+  return { thisWeekText: '', nextWeekText: '', generalText: '', items: [] };
 }
 
 function saveNotes(wk, person, notes) {
@@ -714,6 +714,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
 
   const updateThisWeek = (thisWeekText) => setNotes(prev => ({ ...prev, thisWeekText }));
   const updateNextWeek = (nextWeekText) => setNotes(prev => ({ ...prev, nextWeekText }));
+  const updateGeneral = (generalText) => setNotes(prev => ({ ...prev, generalText }));
 
   // ── Push to Notion ──
 
@@ -773,6 +774,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
           personName: notesPerson === 'General' ? 'General' : notesPerson,
           thisWeekNotes: notes.thisWeekText || '',
           nextWeekNotes: notes.nextWeekText || '',
+          generalNotes: notes.generalText || '',
           updates,
           totalBurned,
         }),
@@ -1111,6 +1113,15 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
                   placeholder={notesPerson === 'General' ? 'Plans and goals for next week...' : `${notesPerson}'s plan for next week...`}
                 />
               </div>
+            </div>
+
+            <div className="meeting-notes-general">
+              <h4 className="meeting-notes-panel-title">General Notes</h4>
+              <RichEditor
+                value={notes.generalText}
+                onChange={updateGeneral}
+                placeholder={notesPerson === 'General' ? 'General discussion notes, decisions, action items...' : `General notes for ${notesPerson}...`}
+              />
             </div>
           </div>
         )}

@@ -604,7 +604,7 @@ async function pushMeetingToNotion({ weekLabel, weekDate, openIssues }) {
   return { url: page.url, id: page.id };
 }
 
-async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, nextWeekNotes, updates, totalBurned, notes, actionItems }) {
+async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, nextWeekNotes, generalNotes, updates, totalBurned, notes, actionItems }) {
   const allBlocks = [];
   let cursor = undefined;
   do {
@@ -704,6 +704,21 @@ async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, next
       type: 'paragraph',
       paragraph: { rich_text: [{ text: { content: '(No notes yet)' }, annotations: { italic: true, color: 'gray' } }] },
     });
+  }
+
+  const generalBlocks = htmlToNotionBlocks(generalNotes || '');
+  if (generalBlocks.length > 0) {
+    blocks.push({
+      object: 'block',
+      type: 'heading_3',
+      heading_3: {
+        rich_text: [{
+          text: { content: personName === 'General' ? 'General Notes' : `${personName} — Notes` },
+          annotations: { italic: true },
+        }],
+      },
+    });
+    blocks.push(...generalBlocks);
   }
 
   const appendPayload = { block_id: pageId, children: blocks };

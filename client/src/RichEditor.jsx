@@ -168,6 +168,7 @@ export default function RichEditor({ value, onChange, placeholder }) {
         className="rich-content"
         contentEditable
         suppressContentEditableWarning
+        spellCheck
         onInput={handleInput}
         onBlur={handleInput}
         onKeyDown={handleKeyDown}
