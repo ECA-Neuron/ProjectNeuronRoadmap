@@ -713,7 +713,7 @@ async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, next
       type: 'heading_3',
       heading_3: {
         rich_text: [{
-          text: { content: personName === 'General' ? 'General Notes' : `${personName} — Notes` },
+          text: { content: personName === 'General' ? 'General Notes' : `${personName} — General Notes` },
           annotations: { italic: true },
         }],
       },
