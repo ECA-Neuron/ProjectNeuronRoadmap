@@ -365,17 +365,28 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
     const weekMap = {};
     for (const task of rows) {
       const tp = task.totalPoints ?? 0;
+      const cp = task.currentPoints ?? 0;
       if (tp <= 0) continue;
-      for (const pr of (task.progressRows ?? [])) {
-        const pct = pr.percentComplete ?? 0;
-        const prevPct = pr.prevPercentComplete ?? 0;
-        const delta = (pct - prevPct) * tp;
-        if (delta <= 0 || !pr.date) continue;
-        const parsed = new Date(pr.date + 'T00:00:00');
+      const pRows = task.progressRows ?? [];
+      const rawDeltas = [];
+      let rawTotal = 0;
+      for (let i = 0; i < pRows.length; i++) {
+        const pct = pRows[i].percentComplete ?? 0;
+        const prevPct = i > 0 ? (pRows[i - 1].percentComplete ?? 0) : 0;
+        const delta = ((pct - prevPct) / 100) * tp;
+        if (delta <= 0) continue;
+        const dateStr = (pRows[i].date ?? '').slice(0, 10);
+        if (!dateStr) continue;
+        rawDeltas.push({ dateStr, delta });
+        rawTotal += delta;
+      }
+      const scale = rawTotal > 0 ? cp / rawTotal : 0;
+      for (const { dateStr, delta } of rawDeltas) {
+        const parsed = new Date(dateStr + 'T00:00:00');
         if (isNaN(parsed.getTime())) continue;
         const weekMon = mondayOf(parsed).toISOString().slice(0, 10);
         if (!weekMap[weekMon]) weekMap[weekMon] = 0;
-        weekMap[weekMon] += delta;
+        weekMap[weekMon] += delta * scale;
       }
     }
     return Object.entries(weekMap)
@@ -628,7 +639,7 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
         </div>
       )}
 
-      {weeklyBurnedData.length > 1 && (
+      {weeklyBurnedData.length > 0 && (
         <div className="home-ws-chart">
           <h3>Points Burned — Week over Week</h3>
           <ResponsiveContainer width="100%" height={320}>
