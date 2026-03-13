@@ -151,11 +151,11 @@ app.post('/api/meeting/push', async (req, res) => {
 
 app.post('/api/meeting/push-notes', async (req, res) => {
   try {
-    const { pageId, personName, notes, actionItems } = req.body;
+    const { pageId, personName, thisWeekNotes, nextWeekNotes, generalNotes, updates, totalBurned, notes, actionItems } = req.body;
     if (!pageId || !personName) {
       return res.status(400).json({ error: 'pageId and personName are required' });
     }
-    await pushPersonNotesToNotion({ pageId, personName, notes, actionItems });
+    await pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, nextWeekNotes, generalNotes, updates, totalBurned, notes, actionItems });
     res.json({ success: true });
   } catch (err) {
     console.error('Person notes push error:', err);
