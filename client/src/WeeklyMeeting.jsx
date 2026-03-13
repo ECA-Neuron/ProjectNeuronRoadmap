@@ -546,8 +546,30 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
     const taskIds = new Set(filteredUpdates.map(u => u.taskId));
     const totalBurned = filteredUpdates.reduce((s, u) => s + (u.deltaPts > 0 ? u.deltaPts : 0), 0);
     const newIssues = openIssues.filter(i => i.dateCreated && i.dateCreated >= rangeBounds.start);
-    return { tasksUpdated: taskIds.size, pointsBurned: totalBurned, newIssues: newIssues.length };
-  }, [filteredUpdates, openIssues, rangeBounds.start]);
+
+    const startDate = new Date(rangeBounds.start + 'T00:00:00');
+    const endDate = new Date(rangeBounds.end + 'T00:00:00');
+    const spanMs = endDate - startDate + 86400000;
+    const prevEnd = new Date(startDate.getTime() - 86400000);
+    const prevStart = new Date(prevEnd.getTime() - spanMs + 86400000);
+    const prevStartStr = prevStart.toISOString().slice(0, 10);
+    const prevEndStr = prevEnd.toISOString().slice(0, 10);
+
+    let prevBurned = 0;
+    for (const task of rows) {
+      for (const pr of (task.progressRows ?? [])) {
+        if (pr.date >= prevStartStr && pr.date <= prevEndStr) {
+          const person = pr.userName || task.assignee || 'Unknown';
+          if (selectedPeople.size === 0 || matchesFilter(person)) {
+            const delta = ((pr.percentComplete ?? 0) - (pr.prevPercentComplete ?? 0)) * (task.totalPoints ?? 0);
+            if (delta > 0) prevBurned += delta;
+          }
+        }
+      }
+    }
+
+    return { tasksUpdated: taskIds.size, pointsBurned: totalBurned, newIssues: newIssues.length, prevBurned };
+  }, [filteredUpdates, openIssues, rangeBounds.start, rangeBounds.end, rows, selectedPeople]);
 
   // ── Section 2: Blockers & Risks ──
 
@@ -876,6 +898,12 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
               <div className="meeting-metric">
                 <div className="meeting-metric-value">{weekSummary.pointsBurned.toFixed(1)}</div>
                 <div className="meeting-metric-label">Points Burned</div>
+                {weekSummary.prevBurned > 0 && (
+                  <div className={`meeting-metric-wow${weekSummary.pointsBurned >= weekSummary.prevBurned ? ' positive' : ' negative'}`}>
+                    {weekSummary.pointsBurned >= weekSummary.prevBurned ? '\u25B2' : '\u25BC'}{' '}
+                    {Math.abs(weekSummary.pointsBurned - weekSummary.prevBurned).toFixed(1)} vs last ({weekSummary.prevBurned.toFixed(1)})
+                  </div>
+                )}
               </div>
               <div className="meeting-metric">
                 <div className="meeting-metric-value">{weekSummary.newIssues}</div>

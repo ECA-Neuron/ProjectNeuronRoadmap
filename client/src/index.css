@@ -2389,6 +2389,14 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 }
 .meeting-metric-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); }
 .meeting-metric-label { font-size: var(--fs-xs); color: var(--text-muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.meeting-metric-wow {
+  font-size: 0.7rem;
+  margin-top: 4px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.meeting-metric-wow.positive { color: #22c55e; }
+.meeting-metric-wow.negative { color: #ef4444; }
 
 .meeting-table {
   width: 100%;
