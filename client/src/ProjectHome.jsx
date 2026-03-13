@@ -242,8 +242,8 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
     return s + (isAdded ? 0 : (t.totalPoints ?? 0));
   }, 0);
   const hasAddedScope = originalTotalPoints !== totalPoints;
-  const currentPoints = rows.reduce((s, t) => s + (t.currentPoints ?? 0), 0);
-  const remainingPoints = Math.max(0, totalPoints - currentPoints);
+  const currentPoints = Math.round(rows.reduce((s, t) => s + (t.currentPoints ?? 0), 0) * 10) / 10;
+  const remainingPoints = Math.round(Math.max(0, totalPoints - currentPoints) * 10) / 10;
   const pctComplete = totalPoints > 0 ? currentPoints / totalPoints : 0;
   const totalTasks = rows.length;
   const completedTasks = rows.filter(t => (t.percentComplete ?? 0) >= 1).length;
