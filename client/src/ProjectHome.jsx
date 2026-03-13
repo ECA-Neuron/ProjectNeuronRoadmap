@@ -361,6 +361,26 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
     return { combined, biweekly, ticksArr, startTs, endTs, hasAddedScope };
   }, [taskSeries, earliestStart, deliveryDate, totalPoints, originalTotalPoints, hasAddedScope]);
 
+  const weeklyBurnedData = useMemo(() => {
+    const weekMap = {};
+    for (const task of rows) {
+      const tp = task.totalPoints ?? 0;
+      if (tp <= 0) continue;
+      for (const pr of (task.progressRows ?? [])) {
+        const pct = pr.percentComplete ?? 0;
+        const prevPct = pr.prevPercentComplete ?? 0;
+        const delta = (pct - prevPct) * tp;
+        if (delta <= 0 || !pr.date) continue;
+        const weekMon = mondayOf(new Date(pr.date + 'T00:00:00')).toISOString().slice(0, 10);
+        if (!weekMap[weekMon]) weekMap[weekMon] = 0;
+        weekMap[weekMon] += delta;
+      }
+    }
+    return Object.entries(weekMap)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([mon, pts]) => ({ week: formatDateShortNoYear(mon), pts: Math.round(pts * 10) / 10 }));
+  }, [rows]);
+
   const wsBreakdown = hierarchy.map(ws => {
     const tp = ws.totalPoints ?? 0;
     const cp = ws.currentPoints ?? 0;
@@ -602,6 +622,29 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
               )}
               <Line type="linear" dataKey="actual" stroke="var(--chart-actual)" strokeWidth={2} name="Actual" dot={{ r: 3, fill: 'var(--chart-actual)' }} connectNulls />
             </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {weeklyBurnedData.length > 1 && (
+        <div className="home-ws-chart">
+          <h3>Points Burned — Week over Week</h3>
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={weeklyBurnedData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+              <XAxis dataKey="week" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 12 }} label={{ value: 'Points', angle: -90, position: 'insideLeft', fill: 'var(--text-muted)', fontSize: 12 }} />
+              <Tooltip
+                contentStyle={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, color: 'var(--text-primary)' }}
+                formatter={(value) => [value, 'Points Burned']}
+              />
+              <Bar dataKey="pts" name="Points Burned" fill="var(--accent)" radius={[4, 4, 0, 0]} barSize={28}>
+                {weeklyBurnedData.map((entry, i) => {
+                  const isCurrentWeek = i === weeklyBurnedData.length - 1;
+                  return <Cell key={i} fill={isCurrentWeek ? 'var(--green)' : 'var(--accent)'} />;
+                })}
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         </div>
       )}
