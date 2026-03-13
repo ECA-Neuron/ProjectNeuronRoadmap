@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { isSeriesOffTrack } from './burndown';
 import NewIssueModal from './NewIssueModal';
+import RichEditor from './RichEditor';
 
 function formatDate(str) {
   if (!str) return '';
@@ -19,11 +20,11 @@ function getWeekBounds() {
   const monday = new Date(now);
   monday.setDate(now.getDate() + diffToMon);
   monday.setHours(0, 0, 0, 0);
-  const friday = new Date(monday);
-  friday.setDate(monday.getDate() + 4);
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
   return {
     monday: monday.toISOString().slice(0, 10),
-    friday: friday.toISOString().slice(0, 10),
+    sunday: sunday.toISOString().slice(0, 10),
   };
 }
 
@@ -113,13 +114,13 @@ function PersonFilter({ allNames, selected, onChange }) {
   );
 }
 
-function StaleTasksDropdown({ staleCount, totalAssigned, staleTasks, onNavigateToTask }) {
+function StaleTasksDropdown({ staleCount, totalAssigned, staleTasks, onNavigateToTask, periodLabel }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="meeting-stale-dropdown">
       <button type="button" className="meeting-stale-toggle" onClick={() => setOpen(o => !o)}>
         <span className="meeting-person-stale-text">
-          {staleCount} of {totalAssigned} assigned tasks not updated this period
+          {staleCount} of {totalAssigned} assigned tasks not updated {periodLabel || 'this period'}
         </span>
         <span className="meeting-stale-caret">{open ? '\u25B4' : '\u25BE'}</span>
       </button>
@@ -413,11 +414,12 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
     i => (i.status ?? '').toLowerCase() !== 'closed' && (i.status ?? '').toLowerCase() !== 'resolved'
   );
 
-  const { monday, friday } = getWeekBounds();
+  const { monday, sunday } = getWeekBounds();
   const today = new Date().toISOString().slice(0, 10);
 
   const [selectedPeople, setSelectedPeople] = useState(new Set());
   const [timeRange, setTimeRange] = useState('week');
+  const [staleFilter, setStaleFilter] = useState('week');
 
   const rangeBounds = useMemo(() => {
     const now = new Date();
@@ -425,7 +427,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
       return { start: today, end: today, label: 'Today', subtitle: formatDate(today) };
     }
     if (timeRange === 'week') {
-      return { start: monday, end: friday, label: 'This Week', subtitle: `${formatDate(monday)} \u2013 ${formatDate(friday)}` };
+      return { start: monday, end: sunday, label: 'This Week', subtitle: `${formatDate(monday)} \u2013 ${formatDate(sunday)}` };
     }
     if (timeRange === 'month') {
       const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
@@ -438,7 +440,26 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
     const qEnd = new Date(now.getFullYear(), qMonth + 3, 0).toISOString().slice(0, 10);
     const qNum = Math.floor(qMonth / 3) + 1;
     return { start: qStart, end: qEnd, label: `Q${qNum}`, subtitle: `${formatDate(qStart)} \u2013 ${formatDate(qEnd)}` };
-  }, [timeRange, today, monday, friday]);
+  }, [timeRange, today, monday, sunday]);
+
+  const staleBounds = useMemo(() => {
+    const now = new Date();
+    if (staleFilter === 'week') {
+      return { start: monday, end: sunday, label: 'this week' };
+    }
+    if (staleFilter === 'month') {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10);
+      return { start: first, end: last, label: 'this month' };
+    }
+    if (staleFilter === 'quarter') {
+      const qMonth = Math.floor(now.getMonth() / 3) * 3;
+      const qStart = new Date(now.getFullYear(), qMonth, 1).toISOString().slice(0, 10);
+      const qEnd = new Date(now.getFullYear(), qMonth + 3, 0).toISOString().slice(0, 10);
+      return { start: qStart, end: qEnd, label: 'this quarter' };
+    }
+    return { ...rangeBounds, label: 'in this range' };
+  }, [staleFilter, monday, sunday, rangeBounds]);
 
   // ── All updates in range ──
 
@@ -609,7 +630,16 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
       }
     }
 
-    const updatedInRange = new Set(filteredUpdates.map(u => u.taskId));
+    const updatedInStaleRange = new Set();
+    for (const task of rows) {
+      for (const pr of (task.progressRows ?? [])) {
+        if (pr.date >= staleBounds.start && pr.date <= staleBounds.end) {
+          updatedInStaleRange.add(task.taskId);
+          break;
+        }
+      }
+    }
+
     const taskById = new Map(rows.map(t => [t.taskId, t]));
     const result = [];
     const allNames = new Set([...Object.keys(byPerson), ...Object.keys(allAssigned)]);
@@ -617,9 +647,10 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
       const person = byPerson[name] ?? { updates: [], totalBurned: 0 };
       const assigned = allAssigned[name] ?? new Set();
       const staleTasks = [...assigned]
-        .filter(id => !updatedInRange.has(id))
+        .filter(id => !updatedInStaleRange.has(id))
         .map(id => taskById.get(id))
         .filter(Boolean)
+        .filter(t => t.dateStarted && t.dateStarted <= staleBounds.end)
         .map(t => ({ taskId: t.taskId, taskName: t.taskName, dateStarted: t.dateStarted, task: t }));
       if (person.updates.length === 0 && staleTasks.length === 0) continue;
       result.push({
@@ -633,7 +664,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
     }
     result.sort((a, b) => b.totalBurned - a.totalBurned);
     return result;
-  }, [filteredUpdates, rows, selectedPeople]);
+  }, [filteredUpdates, rows, selectedPeople, staleBounds]);
 
 
   // ── Section 4: Meeting Notes & Action Items (per-person) ──
@@ -959,6 +990,25 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
           <div className="meeting-section-body">
             <div className="meeting-person-filter-row">
               <PersonFilter allNames={firstNameOptions} selected={selectedPeople} onChange={setSelectedPeople} />
+              <div className="meeting-stale-filter">
+                <span className="meeting-stale-filter-label">Not updated:</span>
+                <div className="meeting-stale-filter-btns">
+                  {[
+                    { value: 'week', label: 'This Week' },
+                    { value: 'month', label: 'This Month' },
+                    { value: 'quarter', label: 'This Quarter' },
+                  ].map(opt => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      className={`meeting-stale-filter-btn${staleFilter === opt.value ? ' active' : ''}`}
+                      onClick={() => setStaleFilter(opt.value)}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
             {personBreakdown.length === 0 ? (
               <p className="meeting-empty">No assignee data available.</p>
@@ -989,6 +1039,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
                         totalAssigned={person.totalAssigned}
                         staleTasks={person.staleTasks}
                         onNavigateToTask={onNavigateToTask}
+                        periodLabel={staleBounds.label}
                       />
                     )}
                   </div>
@@ -1035,12 +1086,10 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
             {notesPushState.status === 'error' && (
               <div className="meeting-toast meeting-toast-error" style={{ marginBottom: 10 }}>Push failed: {notesPushState.error}</div>
             )}
-            <textarea
-              className="meeting-notes-textarea"
-              placeholder={notesPerson === 'General' ? 'General meeting notes...' : `Notes / next week plan for ${notesPerson}...`}
+            <RichEditor
               value={notes.text}
-              onChange={e => updateText(e.target.value)}
-              rows={5}
+              onChange={updateText}
+              placeholder={notesPerson === 'General' ? 'General meeting notes...' : `Notes / next week plan for ${notesPerson}...`}
             />
           </div>
         )}

@@ -2528,8 +2528,46 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   white-space: nowrap;
 }
 
-.meeting-person-filter-row { margin-bottom: 14px; }
-
+.meeting-person-filter-row {
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.meeting-stale-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.meeting-stale-filter-label {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.meeting-stale-filter-btns {
+  display: flex;
+  gap: 4px;
+}
+.meeting-stale-filter-btn {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.meeting-stale-filter-btn:hover {
+  background: var(--hover-bg, rgba(99,102,241,.08));
+}
+.meeting-stale-filter-btn.active {
+  background: var(--amber, #f59e0b);
+  color: #000;
+  border-color: var(--amber, #f59e0b);
+  font-weight: 600;
+}
 
 .meeting-notes-toolbar {
   display: flex;
@@ -3176,6 +3214,59 @@ body.tl-dragging * { cursor: inherit !important; }
 }
 .admin-stale-badge.warn { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
 .admin-stale-badge.critical { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+
+/* =============================================
+   Rich Text Editor
+   ============================================= */
+.rich-editor {
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: var(--surface);
+}
+.rich-toolbar {
+  display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 6px 8px; background: var(--bg-secondary); border-bottom: 1px solid var(--border);
+}
+.rich-toolbar-group { display: flex; align-items: center; gap: 2px; }
+.rich-toolbar-sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
+.rich-btn {
+  width: 30px; height: 28px; border: none; border-radius: 4px; cursor: pointer;
+  background: transparent; color: var(--text-primary); font-size: 0.85rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.12s;
+}
+.rich-btn:hover { background: var(--surface); }
+.rich-btn:active { background: var(--border); }
+.rich-btn-active { background: var(--accent) !important; color: #fff !important; }
+.rich-heading-select {
+  padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text-primary); font-size: 0.78rem;
+  cursor: pointer; height: 28px;
+}
+.rich-heading-select option { background: var(--bg-secondary); color: var(--text-primary); }
+.rich-color-group { gap: 3px; }
+.rich-color-btn {
+  width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border);
+  cursor: pointer; transition: transform 0.1s, border-color 0.1s, box-shadow 0.1s;
+  position: relative; display: flex; align-items: center; justify-content: center;
+  padding: 0;
+}
+.rich-color-btn:hover { transform: scale(1.15); border-color: var(--text-primary); }
+.rich-color-active { border-color: #fff !important; box-shadow: 0 0 0 2px var(--accent), 0 0 8px rgba(59,130,246,0.5); transform: scale(1.15); }
+.rich-color-check { font-size: 11px; color: #000; font-weight: 700; text-shadow: 0 0 2px rgba(255,255,255,0.8); line-height: 1; }
+.rich-content {
+  min-height: 120px; max-height: 400px; overflow-y: auto;
+  padding: 12px 14px; color: var(--text-primary); font-size: 0.9rem;
+  line-height: 1.6; outline: none;
+}
+.rich-content:empty::before {
+  content: attr(data-placeholder); color: var(--text-muted); pointer-events: none;
+}
+.rich-content h1 { font-size: 1.4rem; margin: 8px 0 4px; font-weight: 700; }
+.rich-content h2 { font-size: 1.15rem; margin: 6px 0 3px; font-weight: 600; }
+.rich-content h3 { font-size: 1rem; margin: 4px 0 2px; font-weight: 600; }
+.rich-content ul, .rich-content ol { margin: 4px 0; padding-left: 24px; }
+.rich-content li { margin: 2px 0; }
+.rich-content p { margin: 4px 0; }
 
 @media (max-width: 768px) {
   .app-body { flex-direction: column; }

@@ -367,6 +367,122 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
     return { name: ws.name, totalPoints: tp, currentPoints: cp, pct: tp > 0 ? cp / tp : 0 };
   });
 
+  const wsNames = useMemo(() => hierarchy.map(ws => ws.name), [hierarchy]);
+
+  const monthlyWsData = useMemo(() => {
+    if (!rows.length) return { assignedData: [], burnedData: [] };
+
+    const assignedMap = {};
+    const burnedMap = {};
+    const allMonths = new Set();
+
+    function allDaysBetween(s, e) {
+      const days = [];
+      const cur = new Date(s + 'T00:00:00Z');
+      const end = new Date(e + 'T00:00:00Z');
+      while (cur <= end) {
+        days.push(cur.toISOString().slice(0, 7));
+        cur.setUTCDate(cur.getUTCDate() + 1);
+      }
+      return days;
+    }
+
+    for (const task of rows) {
+      const ws = task.Workstream ?? 'Other';
+      const tp = task.totalPoints ?? 0;
+      const start = task.dateStarted;
+      const end = task.dateExpectedComplete;
+
+      if (start && tp > 0) {
+        const endDate = end || start;
+        const monthSet = new Set(allDaysBetween(start, endDate));
+        const months = [...monthSet];
+        if (months.length > 0) {
+          const ptsPerMonth = tp / months.length;
+          for (const m of months) {
+            allMonths.add(m);
+            const ak = `${ws}|${m}`;
+            assignedMap[ak] = (assignedMap[ak] ?? 0) + ptsPerMonth;
+          }
+        }
+      }
+
+      const cp = task.currentPoints ?? 0;
+      const pRows = task.progressRows ?? [];
+      const rawDeltas = [];
+      let rawTotal = 0;
+      for (let i = 0; i < pRows.length; i++) {
+        const pct = pRows[i].percentComplete ?? 0;
+        const prevPct = i > 0 ? (pRows[i - 1].percentComplete ?? 0) : 0;
+        const delta = ((pct - prevPct) / 100) * tp;
+        if (delta <= 0) continue;
+        const d = (pRows[i].date ?? '').slice(0, 7);
+        if (!d) continue;
+        rawDeltas.push({ month: d, delta });
+        rawTotal += delta;
+      }
+      const scale = rawTotal > 0 ? cp / rawTotal : 0;
+      for (const { month, delta } of rawDeltas) {
+        allMonths.add(month);
+        const bk = `${ws}|${month}`;
+        burnedMap[bk] = (burnedMap[bk] ?? 0) + delta * scale;
+      }
+      if (cp > 0 && rawDeltas.length === 0 && start) {
+        const m = start.slice(0, 7);
+        allMonths.add(m);
+        const bk = `${ws}|${m}`;
+        burnedMap[bk] = (burnedMap[bk] ?? 0) + cp;
+      }
+    }
+
+    const sorted = [...allMonths].sort();
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const label = ym => {
+      const [y, m] = ym.split('-');
+      return `${monthNames[parseInt(m, 10) - 1]} ${y}`;
+    };
+
+    const assignedData = sorted.map(m => {
+      const row = { month: label(m) };
+      for (const ws of wsNames) {
+        row[ws] = Math.round((assignedMap[`${ws}|${m}`] ?? 0) * 10) / 10;
+      }
+      return row;
+    });
+
+    const burnedData = sorted.map(m => {
+      const row = { month: label(m) };
+      for (const ws of wsNames) {
+        row[ws] = Math.round((burnedMap[`${ws}|${m}`] ?? 0) * 10) / 10;
+      }
+      return row;
+    });
+
+    return { assignedData, burnedData };
+  }, [rows, wsNames]);
+
+  const WS_COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1'];
+
+  const WsMonthTooltip = React.useCallback(({ active, payload, label }) => {
+    if (!active || !payload?.length) return null;
+    const total = payload.reduce((s, p) => s + (p.value ?? 0), 0);
+    return (
+      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', color: 'var(--text-primary)', fontSize: '0.85rem' }}>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>{label}</div>
+        {payload.filter(p => p.value > 0).map((p, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 16, color: p.color }}>
+            <span>{p.name}</span>
+            <span>{Math.round(p.value * 10) / 10}</span>
+          </div>
+        ))}
+        <div style={{ borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, display: 'flex', justifyContent: 'space-between', gap: 16, fontWeight: 700 }}>
+          <span>Total</span>
+          <span>{Math.round(total * 10) / 10}</span>
+        </div>
+      </div>
+    );
+  }, []);
+
   const recentUpdates = useMemo(() => {
     const MAX_RECENT = 15;
     return rows
@@ -525,6 +641,42 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
               <Legend />
               <Bar dataKey="totalPoints" name="Total" fill="var(--accent)" radius={[0, 4, 4, 0]} barSize={18} />
               <Bar dataKey="currentPoints" name="Completed" fill="var(--green)" radius={[0, 4, 4, 0]} barSize={18} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {monthlyWsData.assignedData.length > 0 && (
+        <div className="home-ws-chart">
+          <h3>Points Assigned per Month by Workstream</h3>
+          <ResponsiveContainer width="100%" height={380}>
+            <BarChart data={monthlyWsData.assignedData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="month" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 12 }} label={{ value: 'Points', angle: -90, position: 'insideLeft', fill: 'var(--text-muted)', fontSize: 12 }} />
+              <Tooltip content={<WsMonthTooltip />} />
+              <Legend />
+              {wsNames.map((ws, i) => (
+                <Bar key={ws} dataKey={ws} stackId="a" fill={WS_COLORS[i % WS_COLORS.length]} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {monthlyWsData.burnedData.length > 0 && (
+        <div className="home-ws-chart">
+          <h3>Points Burned per Month by Workstream</h3>
+          <ResponsiveContainer width="100%" height={380}>
+            <BarChart data={monthlyWsData.burnedData} margin={{ top: 10, right: 30, left: 10, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+              <XAxis dataKey="month" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 12 }} label={{ value: 'Points', angle: -90, position: 'insideLeft', fill: 'var(--text-muted)', fontSize: 12 }} />
+              <Tooltip content={<WsMonthTooltip />} />
+              <Legend />
+              {wsNames.map((ws, i) => (
+                <Bar key={ws} dataKey={ws} stackId="a" fill={WS_COLORS[i % WS_COLORS.length]} />
+              ))}
             </BarChart>
           </ResponsiveContainer>
         </div>
