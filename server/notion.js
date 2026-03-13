@@ -456,7 +456,7 @@ function buildHierarchy(tasks, workstreamsRows) {
   return tree;
 }
 
-async function pushMeetingToNotion({ weekLabel, weekDate, people, openIssues, notes, actionItems }) {
+async function pushMeetingToNotion({ weekLabel, weekDate, people, openIssues, thisWeekNotes, nextWeekNotes, notes, actionItems }) {
   const dbId = process.env.NOTION_MEETINGS_DB_ID;
   if (!dbId) throw new Error('NOTION_MEETINGS_DB_ID is not set');
 
@@ -539,20 +539,42 @@ async function pushMeetingToNotion({ weekLabel, weekDate, people, openIssues, no
     }
   }
 
-  if (notes && notes.trim()) {
-    blocks.push(
-      { object: 'block', type: 'divider', divider: {} },
-      {
-        object: 'block',
-        type: 'heading_2',
-        heading_2: { rich_text: [{ text: { content: 'Meeting Notes' } }] },
-      },
-      {
-        object: 'block',
-        type: 'paragraph',
-        paragraph: { rich_text: [{ text: { content: notes } }] },
-      }
-    );
+  const effectiveNotes = thisWeekNotes || notes || '';
+  const effectiveNextWeek = nextWeekNotes || '';
+
+  if (effectiveNotes.trim() || effectiveNextWeek.trim()) {
+    blocks.push({ object: 'block', type: 'divider', divider: {} });
+    blocks.push({
+      object: 'block',
+      type: 'heading_2',
+      heading_2: { rich_text: [{ text: { content: 'Meeting Notes' } }] },
+    });
+  }
+
+  if (effectiveNotes.trim()) {
+    blocks.push({
+      object: 'block',
+      type: 'heading_3',
+      heading_3: { rich_text: [{ text: { content: 'This Week' } }] },
+    });
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: { rich_text: [{ text: { content: effectiveNotes } }] },
+    });
+  }
+
+  if (effectiveNextWeek.trim()) {
+    blocks.push({
+      object: 'block',
+      type: 'heading_3',
+      heading_3: { rich_text: [{ text: { content: 'Next Week' } }] },
+    });
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: { rich_text: [{ text: { content: effectiveNextWeek } }] },
+    });
   }
 
   if (actionItems?.length > 0) {
@@ -587,7 +609,7 @@ async function pushMeetingToNotion({ weekLabel, weekDate, people, openIssues, no
   return { url: page.url, id: page.id };
 }
 
-async function pushPersonNotesToNotion({ pageId, personName, notes, actionItems }) {
+async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, nextWeekNotes, updates, notes, actionItems }) {
   const allBlocks = [];
   let cursor = undefined;
   do {
@@ -627,6 +649,8 @@ async function pushPersonNotesToNotion({ pageId, personName, notes, actionItems 
   }
 
   const blocks = [];
+  const effectiveThisWeek = thisWeekNotes || notes || '';
+  const effectiveNextWeek = nextWeekNotes || '';
 
   blocks.push({ object: 'block', type: 'divider', divider: {} });
   blocks.push({
@@ -634,17 +658,55 @@ async function pushPersonNotesToNotion({ pageId, personName, notes, actionItems 
     type: 'heading_3',
     heading_3: {
       rich_text: [{
-        text: { content: personName === 'General' ? 'General Notes' : `${personName} — Next Week Plan` },
+        text: { content: personName === 'General' ? 'General — This Week' : `${personName} — This Week` },
         annotations: { italic: true },
       }],
     },
   });
 
-  if (notes && notes.trim()) {
+  if (updates?.length > 0) {
+    for (const u of updates) {
+      const pctStr = `${Math.round((u.prevPct ?? 0) * 100)}% → ${Math.round((u.pct ?? 0) * 100)}%`;
+      let line = `${u.taskName}  (${pctStr})`;
+      if (u.comment) line += ` — "${u.comment}"`;
+      blocks.push({
+        object: 'block',
+        type: 'bulleted_list_item',
+        bulleted_list_item: { rich_text: [{ text: { content: line } }] },
+      });
+    }
+  }
+
+  if (effectiveThisWeek.trim()) {
     blocks.push({
       object: 'block',
       type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: notes } }] },
+      paragraph: { rich_text: [{ text: { content: effectiveThisWeek } }] },
+    });
+  }
+
+  blocks.push({
+    object: 'block',
+    type: 'heading_3',
+    heading_3: {
+      rich_text: [{
+        text: { content: personName === 'General' ? 'General — Next Week' : `${personName} — Next Week` },
+        annotations: { italic: true },
+      }],
+    },
+  });
+
+  if (effectiveNextWeek.trim()) {
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: { rich_text: [{ text: { content: effectiveNextWeek } }] },
+    });
+  } else {
+    blocks.push({
+      object: 'block',
+      type: 'paragraph',
+      paragraph: { rich_text: [{ text: { content: '(No notes yet)' }, annotations: { italic: true, color: 'gray' } }] },
     });
   }
 

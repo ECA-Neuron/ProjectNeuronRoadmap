@@ -2643,6 +2643,71 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 }
 .meeting-notes-textarea:focus { outline: none; border-color: var(--accent); }
 
+.meeting-notes-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 900px) {
+  .meeting-notes-split {
+    grid-template-columns: 1fr;
+  }
+}
+.meeting-notes-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.meeting-notes-panel-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--accent, #6366f1);
+}
+.meeting-notes-updates {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--bg-tertiary, rgba(0,0,0,.15));
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.meeting-notes-update-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--fs-xs, 0.78rem);
+  flex-wrap: wrap;
+}
+.meeting-notes-update-task {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.meeting-notes-update-pct {
+  color: var(--accent, #6366f1);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.meeting-notes-update-comment {
+  color: var(--text-muted);
+  font-style: italic;
+  font-size: var(--fs-xs, 0.75rem);
+}
+.meeting-notes-no-updates {
+  font-size: var(--fs-sm);
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+  padding: 8px 0;
+}
+
 .meeting-action-header {
   display: flex;
   align-items: center;

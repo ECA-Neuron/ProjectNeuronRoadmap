@@ -35,9 +35,17 @@ function storageKey(wk, person) {
 function loadNotes(wk, person) {
   try {
     const raw = localStorage.getItem(storageKey(wk, person));
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.text && !parsed.thisWeekText) {
+        parsed.thisWeekText = parsed.text;
+        parsed.nextWeekText = parsed.nextWeekText ?? '';
+        delete parsed.text;
+      }
+      return { thisWeekText: parsed.thisWeekText ?? '', nextWeekText: parsed.nextWeekText ?? '', items: parsed.items ?? [] };
+    }
   } catch {}
-  return { text: '', items: [] };
+  return { thisWeekText: '', nextWeekText: '', items: [] };
 }
 
 function saveNotes(wk, person, notes) {
@@ -683,8 +691,18 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
   }, [personBreakdown]);
 
   const [notesPerson, setNotesPerson] = useState('General');
+
+  const notesPersonUpdates = useMemo(() => {
+    if (notesPerson === 'General') {
+      return filteredUpdates;
+    }
+    const target = notesPerson.toLowerCase();
+    return weekUpdates.filter(u => {
+      const firsts = extractFirstNames(u.person).map(n => n.toLowerCase());
+      return firsts.includes(target);
+    });
+  }, [notesPerson, weekUpdates, filteredUpdates]);
   const [notes, setNotes] = useState(() => loadNotes(wk, 'General'));
-  const [newItem, setNewItem] = useState('');
   const notesRef = useRef(notes);
   notesRef.current = notes;
 
@@ -692,27 +710,10 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
 
   useEffect(() => {
     setNotes(loadNotes(wk, notesPerson));
-    setNewItem('');
   }, [wk, notesPerson]);
 
-  const updateText = (text) => setNotes(prev => ({ ...prev, text }));
-  const addItem = () => {
-    if (!newItem.trim()) return;
-    setNotes(prev => ({
-      ...prev,
-      items: [...prev.items, { id: Date.now(), text: newItem.trim(), done: false }],
-    }));
-    setNewItem('');
-  };
-  const toggleItem = (id) => {
-    setNotes(prev => ({
-      ...prev,
-      items: prev.items.map(i => i.id === id ? { ...i, done: !i.done } : i),
-    }));
-  };
-  const removeItem = (id) => {
-    setNotes(prev => ({ ...prev, items: prev.items.filter(i => i.id !== id) }));
-  };
+  const updateThisWeek = (thisWeekText) => setNotes(prev => ({ ...prev, thisWeekText }));
+  const updateNextWeek = (nextWeekText) => setNotes(prev => ({ ...prev, nextWeekText }));
 
   // ── Push to Notion ──
 
@@ -753,8 +754,8 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
           workstream: issue.workstream || '',
           taskName: issue.taskName || issue.deliverable || '',
         })),
-        notes: generalNotes.text,
-        actionItems: generalNotes.items.map(i => ({ text: i.text, done: i.done })),
+        thisWeekNotes: generalNotes.thisWeekText || '',
+        nextWeekNotes: generalNotes.nextWeekText || '',
       };
       const res = await fetch('/api/meeting/push', {
         method: 'POST',
@@ -777,14 +778,21 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
     if (!pushedPageId) return;
     setNotesPushState({ status: 'pushing', error: null });
     try {
+      const updates = notesPersonUpdates.map(u => ({
+        taskName: u.taskName,
+        prevPct: u.prevPct,
+        pct: u.pct,
+        comment: u.comment,
+      }));
       const res = await fetch('/api/meeting/push-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           pageId: pushedPageId,
           personName: notesPerson === 'General' ? 'General' : notesPerson,
-          notes: notes.text,
-          actionItems: notes.items.map(i => ({ text: i.text, done: i.done })),
+          thisWeekNotes: notes.thisWeekText || '',
+          nextWeekNotes: notes.nextWeekText || '',
+          updates,
         }),
       });
       const data = await res.json();
@@ -1050,7 +1058,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
         )}
       </section>
 
-      {/* ── Meeting Notes & Action Items ── */}
+      {/* ── Meeting Notes ── */}
       <section className="meeting-section">
         <div className="meeting-section-header" onClick={() => toggleSection('notes')}>
           <span className="meeting-arrow">{expandedSections.notes ? '\u25BE' : '\u25B8'}</span>
@@ -1086,11 +1094,40 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
             {notesPushState.status === 'error' && (
               <div className="meeting-toast meeting-toast-error" style={{ marginBottom: 10 }}>Push failed: {notesPushState.error}</div>
             )}
-            <RichEditor
-              value={notes.text}
-              onChange={updateText}
-              placeholder={notesPerson === 'General' ? 'General meeting notes...' : `Notes / next week plan for ${notesPerson}...`}
-            />
+
+            <div className="meeting-notes-split">
+              <div className="meeting-notes-panel">
+                <h4 className="meeting-notes-panel-title">This Week</h4>
+                {notesPersonUpdates.length > 0 && (
+                  <ul className="meeting-notes-updates">
+                    {notesPersonUpdates.map((u, i) => (
+                      <li key={`${u.taskId}-${u.date}-${i}`} className="meeting-notes-update-item">
+                        <span className="meeting-notes-update-task">{u.taskName}</span>
+                        <span className="meeting-notes-update-pct">{formatPct(u.prevPct)} &rarr; {formatPct(u.pct)}</span>
+                        {u.comment && <span className="meeting-notes-update-comment">"{u.comment}"</span>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {notesPersonUpdates.length === 0 && (
+                  <p className="meeting-notes-no-updates">No updates this period.</p>
+                )}
+                <RichEditor
+                  value={notes.thisWeekText}
+                  onChange={updateThisWeek}
+                  placeholder={notesPerson === 'General' ? 'Additional notes for this week...' : `Additional notes for ${notesPerson} this week...`}
+                />
+              </div>
+
+              <div className="meeting-notes-panel">
+                <h4 className="meeting-notes-panel-title">Next Week</h4>
+                <RichEditor
+                  value={notes.nextWeekText}
+                  onChange={updateNextWeek}
+                  placeholder={notesPerson === 'General' ? 'Plans and goals for next week...' : `${notesPerson}'s plan for next week...`}
+                />
+              </div>
+            </div>
           </div>
         )}
       </section>
