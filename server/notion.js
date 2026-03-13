@@ -7,6 +7,104 @@ const notion = new Client({
   auth: process.env.NOTION_SECRET,
 });
 
+/* ── HTML → Notion blocks converter ── */
+
+function htmlToNotionBlocks(html) {
+  if (!html || !html.trim()) return [];
+
+  function decode(s) {
+    return s
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(+n));
+  }
+
+  function parseInline(fragment) {
+    const parts = [];
+    let bold = false, italic = false, underline = false, buf = '';
+    function flush() {
+      const t = decode(buf);
+      buf = '';
+      if (!t) return;
+      const rt = { text: { content: t } };
+      const a = {};
+      if (bold) a.bold = true;
+      if (italic) a.italic = true;
+      if (underline) a.underline = true;
+      if (Object.keys(a).length) rt.annotations = a;
+      parts.push(rt);
+    }
+    for (let i = 0; i < fragment.length; i++) {
+      if (fragment[i] === '<') {
+        const j = fragment.indexOf('>', i);
+        if (j === -1) { buf += fragment[i]; continue; }
+        const raw = fragment.slice(i + 1, j);
+        const closing = raw[0] === '/';
+        const tag = (closing ? raw.slice(1) : raw).split(/[\s/]/)[0].toLowerCase();
+        if (tag === 'br') buf += '\n';
+        else if (tag === 'b' || tag === 'strong') { flush(); bold = !closing; }
+        else if (tag === 'i' || tag === 'em') { flush(); italic = !closing; }
+        else if (tag === 'u') { flush(); underline = !closing; }
+        i = j;
+      } else {
+        buf += fragment[i];
+      }
+    }
+    flush();
+    return parts;
+  }
+
+  let s = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(?:div|p|blockquote|li|h[1-6]|ul|ol)>/gi, '\n')
+    .replace(/<(?:div|p|blockquote|ul|ol)(?:\s[^>]*)?>/gi, '\n')
+    .replace(/<li(?:\s[^>]*)?>/gi, '\n')
+    .replace(/<(h[1-3])(?:\s[^>]*)?>/gi, '\n<$1>')
+    .replace(/<\/(h[1-3])>/gi, '</$1>\n');
+
+  const blocks = [];
+  for (let line of s.split('\n')) {
+    line = line.trim();
+    if (!line) continue;
+
+    const hm = line.match(/^<h([1-3])>([\s\S]*?)<\/h\1>$/i);
+    if (hm) {
+      const rt = parseInline(hm[2]);
+      if (rt.length && rt.some(r => r.text.content.trim())) {
+        const k = `heading_${hm[1]}`;
+        blocks.push({ object: 'block', type: k, [k]: { rich_text: rt } });
+      }
+      continue;
+    }
+
+    const content = line.replace(/<\/?(div|p|blockquote|ul|ol|li|span|font)(?:\s[^>]*)?>/gi, '');
+    const plain = decode(content.replace(/<[^>]+>/g, '')).trim();
+    if (!plain) continue;
+
+    if (/^[-•*]\s/.test(plain) || /^[-•*]$/.test(plain)) {
+      const rt = parseInline(content);
+      if (rt.length) {
+        rt[0] = { ...rt[0], text: { ...rt[0].text, content: rt[0].text.content.replace(/^[-•*]\s*/, '') } };
+        if (!rt[0].text.content.trim() && rt.length > 1) rt.shift();
+      }
+      if (rt.length && rt.some(r => r.text.content.trim())) {
+        blocks.push({ object: 'block', type: 'bulleted_list_item', bulleted_list_item: { rich_text: rt } });
+      }
+      continue;
+    }
+
+    const rt = parseInline(content);
+    if (rt.length && rt.some(r => r.text.content.trim())) {
+      blocks.push({ object: 'block', type: 'paragraph', paragraph: { rich_text: rt } });
+    }
+  }
+  return blocks;
+}
+
 let _notionUsersCache = null;
 async function getNotionUsers() {
   if (_notionUsersCache) return _notionUsersCache;
@@ -574,13 +672,7 @@ async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, next
     }
   }
 
-  if (effectiveThisWeek.trim()) {
-    blocks.push({
-      object: 'block',
-      type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: effectiveThisWeek } }] },
-    });
-  }
+  blocks.push(...htmlToNotionBlocks(effectiveThisWeek));
 
   blocks.push({
     object: 'block',
@@ -593,31 +685,15 @@ async function pushPersonNotesToNotion({ pageId, personName, thisWeekNotes, next
     },
   });
 
-  if (effectiveNextWeek.trim()) {
-    blocks.push({
-      object: 'block',
-      type: 'paragraph',
-      paragraph: { rich_text: [{ text: { content: effectiveNextWeek } }] },
-    });
+  const nextWeekBlocks = htmlToNotionBlocks(effectiveNextWeek);
+  if (nextWeekBlocks.length > 0) {
+    blocks.push(...nextWeekBlocks);
   } else {
     blocks.push({
       object: 'block',
       type: 'paragraph',
       paragraph: { rich_text: [{ text: { content: '(No notes yet)' }, annotations: { italic: true, color: 'gray' } }] },
     });
-  }
-
-  if (actionItems?.length > 0) {
-    for (const item of actionItems) {
-      blocks.push({
-        object: 'block',
-        type: 'to_do',
-        to_do: {
-          rich_text: [{ text: { content: item.text } }],
-          checked: !!item.done,
-        },
-      });
-    }
   }
 
   const appendPayload = { block_id: pageId, children: blocks };
