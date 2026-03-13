@@ -371,7 +371,9 @@ export default function ProjectHome({ data, taskSeries, onSelectNode, onNavigate
         const prevPct = pr.prevPercentComplete ?? 0;
         const delta = (pct - prevPct) * tp;
         if (delta <= 0 || !pr.date) continue;
-        const weekMon = mondayOf(new Date(pr.date + 'T00:00:00')).toISOString().slice(0, 10);
+        const parsed = new Date(pr.date + 'T00:00:00');
+        if (isNaN(parsed.getTime())) continue;
+        const weekMon = mondayOf(parsed).toISOString().slice(0, 10);
         if (!weekMap[weekMon]) weekMap[weekMon] = 0;
         weekMap[weekMon] += delta;
       }
