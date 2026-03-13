@@ -57,7 +57,10 @@ function loadPageId(wk) {
 }
 
 function savePageId(wk, id) {
-  try { localStorage.setItem(`meeting_pageId_${wk}`, id); } catch {}
+  try {
+    if (id) localStorage.setItem(`meeting_pageId_${wk}`, id);
+    else localStorage.removeItem(`meeting_pageId_${wk}`);
+  } catch {}
 }
 
 function extractFirstNames(name) {
@@ -784,6 +787,10 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
       setNotesPushState({ status: 'success', error: null });
       setTimeout(() => setNotesPushState(s => s.status === 'success' ? { ...s, status: 'idle' } : s), 5000);
     } catch (err) {
+      if (/could not find block|not found/i.test(err.message)) {
+        setPushedPageId(null);
+        savePageId(weekLabel, null);
+      }
       setNotesPushState({ status: 'error', error: err.message });
       setTimeout(() => setNotesPushState(s => s.status === 'error' ? { ...s, status: 'idle' } : s), 6000);
     }
@@ -821,7 +828,7 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
             disabled={pushState.status === 'pushing'}
             title="Creates the Notion page with open issues. Use the Meeting Notes section to push per-person notes."
           >
-            {pushState.status === 'pushing' ? 'Creating…' : pushedPageId ? 'Page Created' : 'Create Notion Page'}
+            {pushState.status === 'pushing' ? 'Creating…' : pushedPageId ? 'Re-create Page' : 'Create Notion Page'}
           </button>
         </div>
       </div>
