@@ -2621,6 +2621,23 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
 .meeting-push-notes-btn.pushing {
   animation: pushPulse 1s ease-in-out infinite;
 }
+.meeting-clear-notes-btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background .15s, color .15s, border-color .15s;
+  white-space: nowrap;
+}
+.meeting-clear-notes-btn:hover {
+  background: rgba(239, 68, 68, .12);
+  color: #ef4444;
+  border-color: #ef4444;
+}
 .meeting-notes-hint {
   font-size: var(--fs-xs, 0.75rem);
   color: var(--text-muted);

@@ -1092,6 +1092,15 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
               >
                 {notesPushState.status === 'pushing' ? 'Pushing…' : `Push ${notesPerson === 'General' ? '' : notesPerson + '\u2019s '}Notes`}
               </button>
+              <button
+                className="meeting-clear-notes-btn"
+                onClick={() => {
+                  setNotes({ thisWeekText: '', nextWeekText: '', generalText: '', items: [] });
+                }}
+                title={`Clear all text fields for ${notesPerson}`}
+              >
+                Clear Text
+              </button>
             </div>
             {!pushedPageId && (
               <p className="meeting-notes-hint">Create the Notion page first (top button) before pushing individual notes.</p>
