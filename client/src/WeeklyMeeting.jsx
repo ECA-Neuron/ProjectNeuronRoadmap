@@ -725,14 +725,29 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
   const [pushedPageId, setPushedPageId] = useState(() => loadPageId(wk));
   const [notesPushState, setNotesPushState] = useState({ status: 'idle', error: null });
 
-  useEffect(() => { setPushedPageId(loadPageId(wk)); }, [wk]);
+  useEffect(() => {
+    const cached = loadPageId(wk);
+    if (cached) { setPushedPageId(cached); return; }
+    fetch(`/api/meeting/find-page?weekDate=${monday}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.found && data.page?.id) {
+          savePageId(wk, data.page.id);
+          setPushedPageId(data.page.id);
+        } else {
+          setPushedPageId(null);
+        }
+      })
+      .catch(() => setPushedPageId(null));
+  }, [wk, monday]);
 
   const pushToNotion = async () => {
     setPushState({ status: 'pushing', url: null, error: null });
     try {
+      const mondayLabel = new Date(monday + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
       const payload = {
-        weekLabel: `Weekly Insights Review ${new Date(rangeBounds.start).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}`,
-        weekDate: rangeBounds.start,
+        weekLabel: `Weekly Insights Review ${mondayLabel}`,
+        weekDate: monday,
         openIssues: openIssues.map(issue => ({
           name: issue.name || issue.issueName || '',
           severity: issue.severity || '',
@@ -826,9 +841,9 @@ export default function WeeklyMeeting({ data, taskSeries, onNavigateToTask, onRe
             className={`meeting-push-btn${pushState.status === 'pushing' ? ' pushing' : ''}`}
             onClick={pushToNotion}
             disabled={pushState.status === 'pushing'}
-            title="Creates the Notion page with open issues. Use the Meeting Notes section to push per-person notes."
+            title={pushedPageId ? 'Notion page already exists for this week. Click to add open issues to it.' : 'Creates the Notion page for the nearest Monday with open issues.'}
           >
-            {pushState.status === 'pushing' ? 'Creating…' : pushedPageId ? 'Re-create Page' : 'Create Notion Page'}
+            {pushState.status === 'pushing' ? 'Creating…' : pushedPageId ? 'Page Found ✓' : 'Create Notion Page'}
           </button>
         </div>
       </div>

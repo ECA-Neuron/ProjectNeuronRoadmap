@@ -29,7 +29,7 @@ for (const envPath of envPaths) {
 }
 const express = require('express');
 const cors = require('cors');
-const { queryNotionDatabase, getMergedRoadmap, pushMeetingToNotion, pushPersonNotesToNotion, updateItemDates, pushProgressUpdate, createWorkstreamItem, updateIssue, addIssueComment, createIssue } = require('./notion');
+const { queryNotionDatabase, getMergedRoadmap, findMeetingPage, getNearestMonday, pushMeetingToNotion, pushPersonNotesToNotion, updateItemDates, pushProgressUpdate, createWorkstreamItem, updateIssue, addIssueComment, createIssue } = require('./notion');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -131,6 +131,17 @@ app.get('/api/databases/third', async (req, res) => {
     res.json(rows);
   } catch (err) {
     console.error('Third DB error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/meeting/find-page', async (req, res) => {
+  try {
+    const weekDate = req.query.weekDate || getNearestMonday();
+    const result = await findMeetingPage(weekDate);
+    res.json({ found: !!result, page: result });
+  } catch (err) {
+    console.error('Find meeting page error:', err);
     res.status(500).json({ error: err.message });
   }
 });

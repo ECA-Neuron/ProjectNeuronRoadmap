@@ -554,19 +554,60 @@ function buildHierarchy(tasks, workstreamsRows) {
   return tree;
 }
 
+function getNearestMonday() {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  const mon = new Date(now);
+  mon.setDate(now.getDate() + diff);
+  mon.setHours(0, 0, 0, 0);
+  return mon.toISOString().slice(0, 10);
+}
+
+async function findMeetingPage(weekDate) {
+  const dbId = process.env.NOTION_MEETINGS_DB_ID;
+  if (!dbId) throw new Error('NOTION_MEETINGS_DB_ID is not set');
+
+  const targetDate = weekDate || getNearestMonday();
+
+  const resp = await notion.databases.query({
+    database_id: dbId,
+    filter: {
+      property: 'Week Date',
+      date: { equals: targetDate },
+    },
+    sorts: [{ timestamp: 'created_time', direction: 'descending' }],
+    page_size: 1,
+  });
+
+  if (resp.results.length > 0) {
+    const page = resp.results[0];
+    const title = (page.properties?.Week?.title ?? []).map(t => t.plain_text).join('');
+    return { id: page.id, url: page.url, title, weekDate: targetDate };
+  }
+  return null;
+}
+
 async function pushMeetingToNotion({ weekLabel, weekDate, openIssues }) {
   const dbId = process.env.NOTION_MEETINGS_DB_ID;
   if (!dbId) throw new Error('NOTION_MEETINGS_DB_ID is not set');
 
-  const properties = {
-    Week: { title: [{ text: { content: weekLabel } }] },
-    'Week Date': { date: { start: weekDate } },
-  };
+  const mondayDate = weekDate || getNearestMonday();
+  const existing = await findMeetingPage(mondayDate);
+  let page;
 
-  const page = await notion.pages.create({
-    parent: { database_id: dbId },
-    properties,
-  });
+  if (existing) {
+    page = { id: existing.id, url: existing.url };
+  } else {
+    const properties = {
+      Week: { title: [{ text: { content: weekLabel } }] },
+      'Week Date': { date: { start: mondayDate } },
+    };
+    page = await notion.pages.create({
+      parent: { database_id: dbId },
+      properties,
+    });
+  }
 
   const blocks = [];
 
@@ -892,6 +933,8 @@ module.exports = {
   buildHierarchy,
   parseProperty,
   pageToRow,
+  findMeetingPage,
+  getNearestMonday,
   pushMeetingToNotion,
   pushPersonNotesToNotion,
   updateItemDates,
