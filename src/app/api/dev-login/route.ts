@@ -16,7 +16,7 @@ export async function GET() {
   });
 
   const baseUrl = process.env.NEXTAUTH_URL || "http://localhost:3000";
-  const response = NextResponse.redirect(new URL("/dashboard", baseUrl));
+  const response = NextResponse.redirect(new URL("/roadmap", baseUrl));
 
   response.cookies.set("next-auth.session-token", token, {
     httpOnly: true,

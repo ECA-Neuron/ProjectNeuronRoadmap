@@ -10,7 +10,7 @@ export default function SignInPage() {
 
   const handleNotionSignIn = () => {
     setLoading(true);
-    signIn("notion", { callbackUrl: "/dashboard" });
+    signIn("notion", { callbackUrl: "/roadmap" });
   };
 
   return (

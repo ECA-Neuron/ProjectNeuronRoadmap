@@ -23,13 +23,27 @@ export async function discoverDatabase(
 ): Promise<NotionDbInfo | null> {
   const notion = getNotionClient();
 
-  const res = await (notion.search as Function)({
-    query: titleQuery,
-    filter: { value: "data_source", property: "object" },
-    page_size: 5,
-  });
+  let results: RawSearchResult[] = [];
 
-  const results = (res.results ?? []) as RawSearchResult[];
+  // Try filtered search first, fall back to unfiltered if the API rejects the filter value
+  for (const filter of [
+    { value: "data_source", property: "object" },
+    { value: "database", property: "object" },
+    undefined,
+  ]) {
+    try {
+      const res = await (notion.search as Function)({
+        query: titleQuery,
+        ...(filter ? { filter } : {}),
+        page_size: 10,
+      });
+      results = (res.results ?? []) as RawSearchResult[];
+      break;
+    } catch {
+      continue;
+    }
+  }
+
   const db = results.find((r) => {
     if (r.object !== "database") return false;
     const title = r.title?.map((t) => t.plain_text).join("") ?? "";
@@ -66,12 +80,24 @@ export async function listDatabases(): Promise<
   { id: string; title: string }[]
 > {
   const notion = getNotionClient();
-  const res = await (notion.search as Function)({
-    filter: { value: "data_source", property: "object" },
-    page_size: 50,
-  });
 
-  const results = (res.results ?? []) as RawSearchResult[];
+  let results: RawSearchResult[] = [];
+  for (const filter of [
+    { value: "data_source", property: "object" },
+    { value: "database", property: "object" },
+    undefined,
+  ]) {
+    try {
+      const res = await (notion.search as Function)({
+        ...(filter ? { filter } : {}),
+        page_size: 50,
+      });
+      results = (res.results ?? []) as RawSearchResult[];
+      break;
+    } catch {
+      continue;
+    }
+  }
   return results
     .filter((r) => r.object === "database")
     .map((r) => {

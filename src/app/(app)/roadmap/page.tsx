@@ -5,53 +5,60 @@ import { GanttRoadmap } from "./gantt-roadmap";
 export const dynamic = "force-dynamic";
 
 export default async function RoadmapPage() {
-  const [programs, workstreams, people] = await Promise.all([
-    prisma.program.findMany({
-      orderBy: { createdAt: "asc" },
-      include: {
-        burnSnapshots: { orderBy: { date: "desc" }, take: 1 },
-        workstreams: {
-          orderBy: { sortOrder: "asc" },
-          include: {
-            initiatives: {
-              where: { archivedAt: null },
-              include: { subTasks: true },
+  let programs: Awaited<ReturnType<typeof prisma.program.findMany>> = [];
+  let workstreams: Awaited<ReturnType<typeof prisma.workstream.findMany>> = [];
+  let people: Awaited<ReturnType<typeof prisma.person.findMany>> = [];
+
+  try {
+    [programs, workstreams, people] = await Promise.all([
+      prisma.program.findMany({
+        orderBy: { createdAt: "asc" },
+        include: {
+          burnSnapshots: { orderBy: { date: "desc" }, take: 1 },
+          workstreams: {
+            orderBy: { sortOrder: "asc" },
+            include: {
+              initiatives: {
+                where: { archivedAt: null },
+                include: { subTasks: true },
+              },
             },
           },
         },
-      },
-    }),
-    prisma.workstream.findMany({
-      orderBy: { sortOrder: "asc" },
-      include: {
-        initiatives: {
-          where: { archivedAt: null },
-          orderBy: { sortOrder: "asc" },
-          include: {
-            milestones: true,
-            partnerLinks: { include: { partner: true } },
-            subTasks: true,
+      }),
+      prisma.workstream.findMany({
+        orderBy: { sortOrder: "asc" },
+        include: {
+          initiatives: {
+            where: { archivedAt: null },
+            orderBy: { sortOrder: "asc" },
+            include: {
+              milestones: true,
+              partnerLinks: { include: { partner: true } },
+              subTasks: true,
+            },
           },
         },
-      },
-    }),
-    prisma.person.findMany({ orderBy: { name: "asc" } }),
-  ]);
+      }),
+      prisma.person.findMany({ orderBy: { name: "asc" } }),
+    ]) as any;
+  } catch (err) {
+    console.error("Roadmap data load error:", err);
+  }
 
-  // Compute current % for each program
-  const programsWithStats = programs.map((p) => {
+  const programsWithStats = (programs as any[]).map((p: any) => {
     let totalPts = 0;
     let completedPts = 0;
-    for (const ws of p.workstreams) {
-      for (const init of ws.initiatives) {
-        for (const st of init.subTasks) {
+    for (const ws of p.workstreams ?? []) {
+      for (const init of ws.initiatives ?? []) {
+        for (const st of init.subTasks ?? []) {
           totalPts += st.points;
           if (st.status === "DONE") completedPts += st.points;
         }
       }
     }
     const currentPct = totalPts > 0 ? Math.round((completedPts / totalPts) * 100) : 0;
-    const lastSnapshot = p.burnSnapshots[0] || null;
+    const lastSnapshot = p.burnSnapshots?.[0] || null;
     const savedPct = lastSnapshot ? Math.round(lastSnapshot.percentComplete) : 0;
     return {
       id: p.id,
@@ -65,7 +72,7 @@ export default async function RoadmapPage() {
     };
   });
 
-  const data = workstreams.map((ws) => ({ ...ws, programId: ws.programId }));
+  const data = (workstreams as any[]).map((ws: any) => ({ ...ws, programId: ws.programId }));
 
   return (
     <div className="space-y-4">
