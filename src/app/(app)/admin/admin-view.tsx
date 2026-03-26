@@ -67,6 +67,12 @@ export function AdminView({
     errors?: string[];
     error?: string;
   } | null>(null);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState<{
+    success: boolean;
+    output?: string;
+    error?: string;
+  } | null>(null);
 
   const handleAddUser = async () => {
     if (!email) return;
@@ -136,6 +142,59 @@ export function AdminView({
         <h1 className="text-3xl font-bold">Admin</h1>
         <p className="text-muted-foreground mt-1">User management, Notion sync &amp; date refinement</p>
       </div>
+
+      {/* Database Migration */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Database Schema</span>
+            <Button
+              onClick={async () => {
+                setMigrating(true);
+                setMigrateResult(null);
+                try {
+                  const res = await fetch("/api/migrate", { method: "POST" });
+                  const data = await res.json();
+                  setMigrateResult(data);
+                } catch (err) {
+                  setMigrateResult({
+                    success: false,
+                    error: err instanceof Error ? err.message : "Migration failed",
+                  });
+                } finally {
+                  setMigrating(false);
+                }
+              }}
+              disabled={migrating}
+              size="sm"
+              variant="outline"
+            >
+              {migrating ? "Migrating..." : "Push Schema"}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-xs text-muted-foreground mb-3">
+            Applies pending Prisma schema changes to the production database.
+            Run this once after deploying schema updates.
+          </p>
+          {migrateResult && (
+            <div
+              className={`rounded-md p-3 text-sm ${
+                migrateResult.success
+                  ? "bg-green-50 text-green-800 border border-green-200"
+                  : "bg-red-50 text-red-800 border border-red-200"
+              }`}
+            >
+              {migrateResult.success ? (
+                <p className="font-medium">Schema updated successfully. Reload the page.</p>
+              ) : (
+                <p>{migrateResult.error ?? "Migration failed"}</p>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Notion Sync */}
       <Card>
