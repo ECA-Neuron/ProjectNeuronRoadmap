@@ -14,7 +14,7 @@ model User {
   email          String    @unique
   name           String?
   passwordHash   String?
-  role           String    @default("MEMBER") // ADMIN | MEMBER
+  role           String    @default("VIEWER") // ADMIN | MEMBER | VIEWER
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

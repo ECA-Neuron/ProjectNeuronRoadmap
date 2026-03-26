@@ -18,6 +18,7 @@ import {
   deleteIssueComment,
 } from "@/lib/actions/open-issues";
 import { useTrackedSave } from "@/hooks/use-autosave";
+import { useRole } from "@/hooks/use-role";
 
 /* ─── Types ───────────────────────────────────────────── */
 
@@ -99,6 +100,7 @@ export function OpenIssuesView({
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const trackedSave = useTrackedSave();
+  const { canEdit } = useRole();
   const [filterWs, setFilterWs] = useState<string>("all");
   const [filterSeverity, setFilterSeverity] = useState<string>("all");
   const [filterMineOnly, setFilterMineOnly] = useState(false);
@@ -256,9 +258,11 @@ export function OpenIssuesView({
             Showing {filtered.length} issue{filtered.length !== 1 ? "s" : ""}
           </span>
         </div>
-        <Button size="sm" onClick={() => setShowCreateForm(true)} disabled={isPending}>
-          + New Issue
-        </Button>
+        {canEdit && (
+          <Button size="sm" onClick={() => setShowCreateForm(true)} disabled={isPending}>
+            + New Issue
+          </Button>
+        )}
       </div>
 
       {/* ── Create Issue Form ── */}

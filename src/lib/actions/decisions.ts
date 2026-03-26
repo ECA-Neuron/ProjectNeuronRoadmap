@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { decisionLogSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
@@ -18,6 +19,7 @@ export async function getDecisionLogs(featureId?: string, goalId?: string, theme
 }
 
 export async function createDecisionLog(data: unknown, userId?: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = decisionLogSchema.parse(data);
   const log = await prisma.decisionLog.create({
     data: {

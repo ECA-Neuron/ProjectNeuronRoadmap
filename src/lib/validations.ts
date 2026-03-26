@@ -125,7 +125,7 @@ export const userSchema = z.object({
   email: z.string().email("Valid email required"),
   name: z.string().optional(),
   password: z.string().min(6, "Min 6 characters").optional(),
-  role: z.enum(["ADMIN", "MEMBER"]).optional(),
+  role: z.enum(["ADMIN", "MEMBER", "VIEWER"]).optional(),
 });
 
 // ─── Burn Snapshot ─────────────────────────────

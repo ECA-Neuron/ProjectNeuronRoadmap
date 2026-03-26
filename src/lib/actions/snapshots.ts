@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth-helpers";
 import { revalidatePath } from "next/cache";
 import { getCurrentPeriod } from "@/lib/burn-periods";
 
@@ -44,6 +45,7 @@ export async function saveSnapshot(
     subcomponents?: Record<string, { name: string; totalPoints: number; completedPoints: number }>;
   }>
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const percentComplete = totalPoints > 0 ? (completedPoints / totalPoints) * 100 : 0;
 
   const snapshot = await prisma.burnSnapshot.upsert({
@@ -80,6 +82,7 @@ export async function saveSnapshot(
  * Can only save for the CURRENT month.
  */
 export async function saveMonthlySnapshot(programId: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const period = getCurrentPeriod();
 
   const program = await prisma.program.findUnique({
@@ -149,9 +152,11 @@ export async function saveMonthlySnapshot(programId: string) {
 
 /** Backward-compat aliases */
 export async function saveBiweeklySnapshot(programId: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   return saveMonthlySnapshot(programId);
 }
 export async function saveSnapshotForToday(programId: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   return saveMonthlySnapshot(programId);
 }
 

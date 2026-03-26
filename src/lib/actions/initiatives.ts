@@ -3,6 +3,7 @@
 import { prisma } from "@/lib/prisma";
 import { initiativeSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
+import { requireRole } from "@/lib/auth-helpers";
 
 export async function getInitiatives(includeArchived = false) {
   return prisma.initiative.findMany({
@@ -35,6 +36,7 @@ export async function getInitiative(id: string) {
 }
 
 export async function createInitiative(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = initiativeSchema.parse(data);
   const initiative = await prisma.initiative.create({
     data: {
@@ -51,6 +53,7 @@ export async function createInitiative(data: unknown) {
 }
 
 export async function updateInitiative(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = initiativeSchema.parse(data);
   const initiative = await prisma.initiative.update({
     where: { id },
@@ -72,6 +75,7 @@ export async function updateInitiativeField(
   field: string,
   value: string | number | boolean | null
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const allowedFields = [
     "ownerInitials",
     "ownerId",
@@ -96,6 +100,7 @@ export async function updateInitiativeField(
 
 /** Set initiative owner from a Person (people tag). Syncs ownerInitials and ownerId so the dashboard shows it for the linked user. */
 export async function updateInitiativeOwner(initiativeId: string, personId: string | null) {
+  await requireRole(["ADMIN", "MEMBER"]);
   if (!personId) {
     await prisma.initiative.update({
       where: { id: initiativeId },
@@ -116,6 +121,7 @@ export async function updateInitiativeOwner(initiativeId: string, personId: stri
 }
 
 export async function archiveInitiative(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.initiative.update({
     where: { id },
     data: { archivedAt: new Date() },
@@ -130,6 +136,7 @@ export async function updateInitiativeDates(
   startMonth: string | null,
   endMonth: string | null
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.initiative.update({
     where: { id },
     data: { plannedStartMonth: startMonth, plannedEndMonth: endMonth, needsRefinement: false },

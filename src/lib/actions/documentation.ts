@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth-helpers";
 import { revalidatePath } from "next/cache";
 
 export async function getDocs(entityType?: string, entityId?: string) {
@@ -32,6 +33,7 @@ export async function createDoc(data: {
   initiativeId?: string | null;
   authorId?: string | null;
 }) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const doc = await prisma.documentation.create({
     data: {
       title: data.title,
@@ -51,6 +53,7 @@ export async function updateDoc(
   id: string,
   data: { title?: string; body?: string }
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const doc = await prisma.documentation.update({
     where: { id },
     data,
@@ -60,6 +63,7 @@ export async function updateDoc(
 }
 
 export async function deleteDoc(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.documentation.delete({ where: { id } });
   revalidatePath("/docs");
 }

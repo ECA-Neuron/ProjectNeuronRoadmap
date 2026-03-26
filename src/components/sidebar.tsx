@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -31,13 +32,19 @@ const navItems = [
   { href: "/partners", label: "Partners", icon: "🤝" },
   { href: "/people", label: "People", icon: "👥" },
   { href: "/docs", label: "Documentation", icon: "📖", children: docsLinks },
-  { href: "/admin", label: "Admin", icon: "⚙️" },
+  { href: "/admin", label: "Admin", icon: "⚙️", adminOnly: true },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { data: session } = useSession();
+  const role = (session?.user as { role?: string } | undefined)?.role;
   const [wsOpen, setWsOpen] = useState(pathname?.startsWith("/workstreams") || false);
   const [docsOpen, setDocsOpen] = useState(pathname?.startsWith("/docs") || false);
+
+  const visibleItems = navItems.filter(
+    (item) => !(item as { adminOnly?: boolean }).adminOnly || role === "ADMIN"
+  );
 
   return (
     <aside className="fixed left-0 top-0 z-[100] h-screen w-64 border-r bg-card overflow-y-auto">
@@ -48,7 +55,7 @@ export function Sidebar() {
         </Link>
       </div>
       <nav className="flex flex-col gap-0.5 p-3">
-        {navItems.map((item) => {
+        {visibleItems.map((item) => {
           const active = pathname === item.href || (item.href !== "/workstreams" && item.href !== "/docs" && pathname?.startsWith(item.href));
           const hasChildren = !!item.children;
           const isWs = item.href === "/workstreams";

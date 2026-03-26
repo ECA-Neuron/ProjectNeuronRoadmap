@@ -13,6 +13,7 @@ import { getCurrentPeriod, getMonthlyPeriods } from "@/lib/burn-periods";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useTrackedSave } from "@/hooks/use-autosave";
+import { useRole } from "@/hooks/use-role";
 import {
   computeStoryPoints,
   finalAsNumber,
@@ -199,6 +200,7 @@ export default function WorkstreamView({
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
   const trackedSave = useTrackedSave();
+  const { canEdit } = useRole();
 
   // Rollup: workstream-level totals
   const wsRollup = useMemo(() => {
@@ -357,14 +359,16 @@ export default function WorkstreamView({
               {(periodSaved || savedPeriods.has(currentPeriod.dateKey)) && (
                 <Badge variant="secondary" className="text-[10px] bg-green-100 text-green-700">Month Saved</Badge>
               )}
-              <Button
-                onClick={handleSaveProgress}
-                disabled={isPending}
-                size="sm"
-                className="whitespace-nowrap"
-              >
-                {(periodSaved || savedPeriods.has(currentPeriod.dateKey)) ? "Update This Month" : "Save Progress for This Month"}
-              </Button>
+              {canEdit && (
+                <Button
+                  onClick={handleSaveProgress}
+                  disabled={isPending}
+                  size="sm"
+                  className="whitespace-nowrap"
+                >
+                  {(periodSaved || savedPeriods.has(currentPeriod.dateKey)) ? "Update This Month" : "Save Progress for This Month"}
+                </Button>
+              )}
             </div>
           </div>
           {/* ── Month Dropdown ── */}
@@ -713,7 +717,7 @@ export default function WorkstreamView({
                           ❓ Rubric
                         </Link>
                       </div>
-                      <AddSubTaskButton initiativeId={init.id} onDone={refresh} />
+                      {canEdit && <AddSubTaskButton initiativeId={init.id} onDone={refresh} />}
                     </div>
 
                     {init.subTasks.length === 0 && (

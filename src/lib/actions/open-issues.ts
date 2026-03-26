@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { openIssueSchema, issueCommentSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
+import { requireRole } from "@/lib/auth-helpers";
 
 export async function getOpenIssues(workstreamId?: string) {
   return prisma.openIssue.findMany({
@@ -35,6 +36,7 @@ export async function getAllIssues(workstreamId?: string, includeResolved = fals
 }
 
 export async function createOpenIssue(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = openIssueSchema.parse(data);
   const assigneeIds = parsed.assigneeIds ?? [];
   const issue = await prisma.openIssue.create({
@@ -66,6 +68,7 @@ export async function updateOpenIssue(
     subTaskId: string | null;
   }>
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const issue = await prisma.openIssue.update({
     where: { id },
     data,
@@ -78,6 +81,7 @@ export async function updateOpenIssue(
 
 /** Set full list of assignees for an issue (replaces existing). */
 export async function setIssueAssignees(issueId: string, personIds: string[]) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.openIssueAssignee.deleteMany({ where: { issueId } });
   if (personIds.length > 0) {
     await prisma.openIssueAssignee.createMany({
@@ -90,6 +94,7 @@ export async function setIssueAssignees(issueId: string, personIds: string[]) {
 }
 
 export async function resolveOpenIssue(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const issue = await prisma.openIssue.update({
     where: { id },
     data: { resolvedAt: new Date() },
@@ -101,6 +106,7 @@ export async function resolveOpenIssue(id: string) {
 }
 
 export async function reopenIssue(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const issue = await prisma.openIssue.update({
     where: { id },
     data: { resolvedAt: null },
@@ -112,6 +118,7 @@ export async function reopenIssue(id: string) {
 }
 
 export async function deleteOpenIssue(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.openIssue.delete({ where: { id } });
   revalidatePath("/open-issues");
   revalidatePath("/workstreams");
@@ -148,6 +155,7 @@ export type AddCommentResult =
   | { success: false; error: string };
 
 export async function addIssueComment(data: unknown): Promise<AddCommentResult> {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = issueCommentSchema.safeParse(data);
   if (!parsed.success) {
     const msg = parsed.error.flatten().formErrors?.[0] || parsed.error.message || "Invalid comment data";
@@ -267,6 +275,7 @@ export async function markMentionSeen(mentionId: string) {
 }
 
 export async function deleteIssueComment(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.issueComment.delete({ where: { id } });
   revalidatePath("/open-issues");
   revalidatePath("/my-dashboard");

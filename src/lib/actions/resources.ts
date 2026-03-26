@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { resourceSchema, teamSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
@@ -14,6 +15,7 @@ export async function getResources(includeArchived = false) {
 }
 
 export async function createResource(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = resourceSchema.parse(data);
   const resource = await prisma.resource.create({
     data: {
@@ -27,6 +29,7 @@ export async function createResource(data: unknown) {
 }
 
 export async function updateResource(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = resourceSchema.parse(data);
   const resource = await prisma.resource.update({
     where: { id },
@@ -41,6 +44,7 @@ export async function updateResource(id: string, data: unknown) {
 }
 
 export async function archiveResource(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.resource.update({
     where: { id },
     data: { archivedAt: new Date() },
@@ -53,6 +57,7 @@ export async function getTeams() {
 }
 
 export async function createTeam(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = teamSchema.parse(data);
   const team = await prisma.team.create({ data: parsed });
   revalidatePath("/resources");

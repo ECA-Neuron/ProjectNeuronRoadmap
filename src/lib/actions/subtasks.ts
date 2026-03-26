@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { authOptions } from "@/lib/auth";
 import { subTaskSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
+import { requireRole } from "@/lib/auth-helpers";
 
 export async function getSubTasks(initiativeId: string) {
   return prisma.subTask.findMany({
@@ -15,6 +16,7 @@ export async function getSubTasks(initiativeId: string) {
 }
 
 export async function createSubTask(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = subTaskSchema.parse(data);
   const subTask = await prisma.subTask.create({
     data: {
@@ -50,6 +52,7 @@ export async function updateSubTask(id: string, data: Partial<{
   integration: string | null;
   assignedOrganization: string | null;
 }>) {
+  await requireRole(["ADMIN", "MEMBER"]);
   try {
     const subTask = await prisma.subTask.update({
       where: { id },
@@ -79,6 +82,7 @@ export async function updateSubTaskCompletion(
   completionPercent: number,
   reason?: string | null
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const clamped = Math.max(0, Math.min(100, completionPercent));
   const status = clamped === 100 ? "DONE" : clamped > 0 ? "IN_PROGRESS" : "NOT_STARTED";
   const existing = await prisma.subTask.findUnique({ where: { id }, select: { completionPercent: true } });
@@ -131,6 +135,7 @@ export async function updateSubTaskEstimation(
     points?: number;
   }
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const subTask = await prisma.subTask.update({
     where: { id },
     data,
@@ -141,6 +146,7 @@ export async function updateSubTaskEstimation(
 }
 
 export async function toggleSubTaskAddedScope(id: string, isAddedScope: boolean) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const subTask = await prisma.subTask.update({
     where: { id },
     data: { isAddedScope },
@@ -152,6 +158,7 @@ export async function toggleSubTaskAddedScope(id: string, isAddedScope: boolean)
 }
 
 export async function updateSubTaskAssignee(id: string, assigneeId: string | null) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const subTask = await prisma.subTask.update({
     where: { id },
     data: { assigneeId },
@@ -162,6 +169,7 @@ export async function updateSubTaskAssignee(id: string, assigneeId: string | nul
 }
 
 export async function deleteSubTask(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.subTask.delete({ where: { id } });
   revalidatePath("/workstreams");
   revalidatePath("/my-dashboard");

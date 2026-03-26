@@ -1,5 +1,6 @@
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 
@@ -25,6 +26,7 @@ export async function createAssignment(data: {
   notes?: string | null;
   outcome?: string | null;
 }) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const assignment = await prisma.assignment.create({
     data: {
       personId: data.personId || null,
@@ -53,6 +55,7 @@ export async function updateAssignment(id: string, data: Partial<{
   notes: string | null;
   outcome: string | null;
 }>) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const assignment = await prisma.assignment.update({
     where: { id },
     data,
@@ -62,6 +65,7 @@ export async function updateAssignment(id: string, data: Partial<{
 }
 
 export async function deleteAssignment(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.assignment.delete({ where: { id } });
   revalidatePath("/assignments");
 }

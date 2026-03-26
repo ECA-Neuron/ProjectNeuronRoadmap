@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { issueSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
@@ -32,6 +33,7 @@ export async function getIssue(id: string) {
 }
 
 export async function createIssue(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = issueSchema.parse(data);
   const issue = await prisma.issue.create({ data: parsed });
   revalidatePath("/issues");
@@ -40,6 +42,7 @@ export async function createIssue(data: unknown) {
 }
 
 export async function updateIssue(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = issueSchema.parse(data);
   const issue = await prisma.issue.update({ where: { id }, data: parsed });
   revalidatePath("/issues");
@@ -51,6 +54,7 @@ export async function changeIssueStatus(
   newStatus: string,
   userId?: string
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const issue = await prisma.issue.findUniqueOrThrow({ where: { id } });
   const oldStatus = issue.status;
 
@@ -73,6 +77,7 @@ export async function changeIssueStatus(
 }
 
 export async function archiveIssue(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.issue.update({
     where: { id },
     data: { archivedAt: new Date() },

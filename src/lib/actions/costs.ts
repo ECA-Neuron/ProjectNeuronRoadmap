@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { costEntrySchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
@@ -13,6 +14,7 @@ export async function getCostEntries() {
 }
 
 export async function createCostEntry(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = costEntrySchema.parse(data);
   const entry = await prisma.costEntry.create({
     data: {
@@ -25,6 +27,7 @@ export async function createCostEntry(data: unknown) {
 }
 
 export async function updateCostEntry(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = costEntrySchema.parse(data);
   const entry = await prisma.costEntry.update({
     where: { id },
@@ -38,6 +41,7 @@ export async function updateCostEntry(id: string, data: unknown) {
 }
 
 export async function deleteCostEntry(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.costEntry.delete({ where: { id } });
   revalidatePath("/cost");
 }

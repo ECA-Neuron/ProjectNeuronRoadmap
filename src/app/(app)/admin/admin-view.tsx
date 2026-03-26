@@ -44,15 +44,13 @@ export function AdminView({
   const [people, setPeople] = useState(initialPeople);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
-  const [password, setPassword] = useState("");
   const [role, setRole] = useState("MEMBER");
 
   const handleAddUser = async () => {
     if (!email) return;
-    await createUser({ email, name, password, role });
+    await createUser({ email, name, role });
     setEmail("");
     setName("");
-    setPassword("");
     window.location.reload();
   };
 
@@ -105,12 +103,9 @@ export function AdminView({
               <Input value={name} onChange={(e) => setName(e.target.value)} className="w-40" />
             </div>
             <div>
-              <label className="text-xs font-medium">Password *</label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-36" />
-            </div>
-            <div>
               <label className="text-xs font-medium">Role</label>
               <select className="rounded-md border px-3 py-2 text-sm bg-background" value={role} onChange={(e) => setRole(e.target.value)}>
+                <option value="VIEWER">Viewer</option>
                 <option value="MEMBER">Member</option>
                 <option value="ADMIN">Admin</option>
               </select>
@@ -168,6 +163,7 @@ export function AdminView({
                         value={u.role}
                         onChange={(e) => handleRoleChange(u.id, e.target.value)}
                       >
+                        <option value="VIEWER">Viewer</option>
                         <option value="MEMBER">Member</option>
                         <option value="ADMIN">Admin</option>
                       </select>

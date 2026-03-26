@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { addIssueComment, deleteIssueComment } from "@/lib/actions/open-issues";
 import { useTrackedSave } from "@/hooks/use-autosave";
+import { useRole } from "@/hooks/use-role";
 
 /* ─── Types ───────────────────────────────────────────── */
 
@@ -440,6 +441,7 @@ export function DashboardOpenIssues({
 }) {
   const router = useRouter();
   const trackedSave = useTrackedSave();
+  const { canEdit } = useRole();
 
   function onUpdate() {
     router.refresh();

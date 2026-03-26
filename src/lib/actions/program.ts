@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { requireRole } from "@/lib/auth-helpers";
 import { programSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
 
@@ -51,6 +52,7 @@ export async function getProgramById(id: string) {
 }
 
 export async function createProgram(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = programSchema.parse(data);
   const program = await prisma.program.create({
     data: {
@@ -71,6 +73,7 @@ export async function createProgram(data: unknown) {
 }
 
 export async function updateProgram(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = programSchema.parse(data);
   const program = await prisma.program.update({ where: { id }, data: parsed });
   revalidatePath("/roadmap");
@@ -84,6 +87,7 @@ export async function updateProgramField(
   field: string,
   value: string | number | boolean | null
 ) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const allowedFields = ["name", "status", "mission", "vision", "startDate", "targetDate"];
   if (!allowedFields.includes(field)) throw new Error(`Field ${field} not editable`);
 
@@ -100,6 +104,7 @@ export async function updateProgramField(
 }
 
 export async function deleteProgram(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.program.delete({ where: { id } });
   revalidatePath("/roadmap");
   revalidatePath("/dashboard");

@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { featureGroupSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
@@ -17,6 +18,7 @@ export async function getFeatureGroups(themeId?: string) {
 }
 
 export async function createFeatureGroup(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = featureGroupSchema.parse(data);
   const fg = await prisma.featureGroup.create({ data: parsed });
   revalidatePath("/roadmap");
@@ -24,6 +26,7 @@ export async function createFeatureGroup(data: unknown) {
 }
 
 export async function updateFeatureGroup(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = featureGroupSchema.parse(data);
   const fg = await prisma.featureGroup.update({ where: { id }, data: parsed });
   revalidatePath("/roadmap");
@@ -31,6 +34,7 @@ export async function updateFeatureGroup(id: string, data: unknown) {
 }
 
 export async function archiveFeatureGroup(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.featureGroup.update({
     where: { id },
     data: { archivedAt: new Date() },

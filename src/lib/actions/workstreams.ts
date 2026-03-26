@@ -1,5 +1,6 @@
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { workstreamSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
@@ -34,6 +35,7 @@ export async function getWorkstream(slug: string) {
 }
 
 export async function createWorkstream(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = workstreamSchema.parse(data);
   const count = await prisma.workstream.count();
   const ws = await prisma.workstream.create({
@@ -47,6 +49,7 @@ export async function createWorkstream(data: unknown) {
 }
 
 export async function updateWorkstream(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = workstreamSchema.parse(data);
   const ws = await prisma.workstream.update({ where: { id }, data: parsed });
   revalidatePath("/roadmap");
@@ -58,6 +61,7 @@ export async function updateWorkstream(id: string, data: unknown) {
 }
 
 export async function deleteWorkstream(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.workstream.delete({ where: { id } });
   revalidatePath("/roadmap");
   revalidatePath("/workstreams");

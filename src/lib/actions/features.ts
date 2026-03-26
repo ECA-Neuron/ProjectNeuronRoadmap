@@ -1,6 +1,7 @@
 // @ts-nocheck
 "use server";
 
+import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
 import { featureSchema } from "@/lib/validations";
 import { revalidatePath } from "next/cache";
@@ -43,6 +44,7 @@ export async function getFeature(id: string) {
 }
 
 export async function createFeature(data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = featureSchema.parse(data);
   const feature = await prisma.feature.create({
     data: {
@@ -58,6 +60,7 @@ export async function createFeature(data: unknown) {
 }
 
 export async function updateFeature(id: string, data: unknown) {
+  await requireRole(["ADMIN", "MEMBER"]);
   const parsed = featureSchema.parse(data);
   const feature = await prisma.feature.update({
     where: { id },
@@ -74,6 +77,7 @@ export async function updateFeature(id: string, data: unknown) {
 }
 
 export async function archiveFeature(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.feature.update({
     where: { id },
     data: { archivedAt: new Date() },
@@ -83,6 +87,7 @@ export async function archiveFeature(id: string) {
 }
 
 export async function unarchiveFeature(id: string) {
+  await requireRole(["ADMIN", "MEMBER"]);
   await prisma.feature.update({
     where: { id },
     data: { archivedAt: null },
