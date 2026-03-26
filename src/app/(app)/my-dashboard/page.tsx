@@ -14,6 +14,13 @@ export default async function MyDashboardPage() {
   const userName = session.user.name ?? "";
   const userEmail = session.user.email ?? "";
 
+  // Compute initials for matching (e.g., "Jacky Chen" → "JC")
+  const userInitials = userName
+    .split(/\s+/)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+
   // Find the user's Person record (linked via name match)
   const person = await prisma.person.findFirst({
     where: {
@@ -40,10 +47,17 @@ export default async function MyDashboardPage() {
       })
     : [];
 
-  // Fetch initiatives/features owned by this user (matched by name in ownerInitials)
+  // Fetch initiatives/features owned by this user (match full name OR initials)
   const initiatives = await prisma.initiative.findMany({
     where: {
-      ownerInitials: { equals: userName, mode: "insensitive" },
+      OR: [
+        { ownerInitials: { equals: userName, mode: "insensitive" } },
+        { ownerInitials: { equals: userInitials, mode: "insensitive" } },
+        // Also include parent features of the user's tasks
+        ...(person
+          ? [{ subTasks: { some: { assigneeId: person.id } } }]
+          : []),
+      ],
     },
     include: {
       workstream: { select: { id: true, name: true } },
