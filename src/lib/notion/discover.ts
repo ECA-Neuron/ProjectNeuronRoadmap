@@ -45,7 +45,7 @@ export async function discoverDatabase(
   }
 
   const db = results.find((r) => {
-    if (r.object !== "database") return false;
+    if (r.object !== "database" && r.object !== "data_source") return false;
     const title = r.title?.map((t) => t.plain_text).join("") ?? "";
     return title.toLowerCase().includes(titleQuery.toLowerCase());
   });
@@ -99,7 +99,7 @@ export async function listDatabases(): Promise<
     }
   }
   return results
-    .filter((r) => r.object === "database")
+    .filter((r) => r.object === "database" || r.object === "data_source")
     .map((r) => {
       const title = r.title?.map((t) => t.plain_text).join("") ?? "(untitled)";
       return { id: r.id, title };
