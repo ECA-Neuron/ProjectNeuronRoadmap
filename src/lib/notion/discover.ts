@@ -1,4 +1,4 @@
-import { getNotionClient } from "./client";
+import { getNotionClientAsync } from "./client";
 
 export interface NotionDbInfo {
   id: string;
@@ -21,7 +21,7 @@ interface RawSearchResult {
 export async function discoverDatabase(
   titleQuery: string
 ): Promise<NotionDbInfo | null> {
-  const notion = getNotionClient();
+  const notion = await getNotionClientAsync();
 
   let results: RawSearchResult[] = [];
 
@@ -79,7 +79,7 @@ export async function discoverDatabase(
 export async function listDatabases(): Promise<
   { id: string; title: string }[]
 > {
-  const notion = getNotionClient();
+  const notion = await getNotionClientAsync();
 
   let results: RawSearchResult[] = [];
   for (const filter of [

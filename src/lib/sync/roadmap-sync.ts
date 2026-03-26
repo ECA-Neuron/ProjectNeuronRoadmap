@@ -1,6 +1,7 @@
 "use server";
 
-import { getNotionClient } from "@/lib/notion/client";
+import { getNotionClientAsync } from "@/lib/notion/client";
+import type { Client } from "@notionhq/client";
 import { discoverDatabase } from "@/lib/notion/discover";
 import {
   parseNotionPage,
@@ -18,7 +19,7 @@ const ROADMAP_DB_TITLE = "Neuron Workstreams Roadmap";
 // ---------------------------------------------------------------------------
 
 async function getAllPages(databaseId: string): Promise<PageObjectResponse[]> {
-  const notion = getNotionClient();
+  const notion = await getNotionClientAsync();
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined;
 
@@ -363,10 +364,10 @@ export async function pullFromNotion(
 // ---------------------------------------------------------------------------
 
 // Wrappers to bypass SDK v5 strict property types
-function updatePage(notion: ReturnType<typeof getNotionClient>, params: Record<string, unknown>) {
+function updatePage(notion: Client, params: Record<string, unknown>) {
   return (notion.pages.update as Function)(params);
 }
-function createPage(notion: ReturnType<typeof getNotionClient>, params: Record<string, unknown>) {
+function createPage(notion: Client, params: Record<string, unknown>) {
   return (notion.pages.create as Function)(params) as Promise<{ id: string }>;
 }
 
@@ -374,7 +375,7 @@ export async function pushToNotion(
   syncLogId: string,
   lastSyncedAt: Date | null
 ): Promise<{ synced: number; errors: string[] }> {
-  const notion = getNotionClient();
+  const notion = await getNotionClientAsync();
   const errors: string[] = [];
   let synced = 0;
 

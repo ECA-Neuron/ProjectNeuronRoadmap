@@ -120,19 +120,19 @@ export const authOptions: NextAuthOptions = {
       }
 
       try {
-        const existing = await prisma.user.findUnique({
+        let dbUser = await prisma.user.findUnique({
           where: { email: user.email },
         });
 
-        if (!existing) {
-          const newUser = await prisma.user.create({
+        if (!dbUser) {
+          dbUser = await prisma.user.create({
             data: {
               email: user.email,
               name: user.name ?? user.email,
               role: "VIEWER",
             },
           });
-          console.log("[Notion OAuth] Created new user:", newUser.email);
+          console.log("[Notion OAuth] Created new user:", dbUser.email);
 
           if (user.name) {
             try {
@@ -145,7 +145,7 @@ export const authOptions: NextAuthOptions = {
               if (person) {
                 await prisma.person.update({
                   where: { id: person.id },
-                  data: { userId: newUser.id },
+                  data: { userId: dbUser.id },
                 });
                 console.log("[Notion OAuth] Auto-linked person:", person.name);
               }
@@ -154,7 +154,34 @@ export const authOptions: NextAuthOptions = {
             }
           }
         } else {
-          console.log("[Notion OAuth] Existing user found:", existing.email);
+          console.log("[Notion OAuth] Existing user found:", dbUser.email);
+        }
+
+        // Store the Notion OAuth access token for server-side API sync
+        if (account.access_token && dbUser) {
+          try {
+            await prisma.account.upsert({
+              where: {
+                provider_providerAccountId: {
+                  provider: "notion",
+                  providerAccountId: account.providerAccountId,
+                },
+              },
+              update: {
+                access_token: account.access_token,
+              },
+              create: {
+                userId: dbUser.id,
+                type: "oauth",
+                provider: "notion",
+                providerAccountId: account.providerAccountId,
+                access_token: account.access_token,
+              },
+            });
+            console.log("[Notion OAuth] Stored access token for sync");
+          } catch (e) {
+            console.error("[Notion OAuth] Token store failed (non-fatal):", e);
+          }
         }
       } catch (e) {
         console.error("[Notion OAuth] signIn DB error (non-fatal):", e);
