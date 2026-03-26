@@ -1,7 +1,6 @@
 "use server";
 
-import { getNotionClientAsync } from "@/lib/notion/client";
-import type { Client } from "@notionhq/client";
+import { getNotionToken } from "@/lib/notion/client";
 import { discoverDatabase } from "@/lib/notion/discover";
 import {
   parseNotionPage,
@@ -13,31 +12,46 @@ import { prisma } from "@/lib/prisma";
 import type { PageObjectResponse } from "@notionhq/client/build/src/api-endpoints";
 
 const ROADMAP_DB_TITLE = "Neuron Workstreams Roadmap";
+const NOTION_V = "2022-06-28";
+
+// ---------------------------------------------------------------------------
+// Raw Notion API helper (bypasses SDK v5 data_source / version issues)
+// ---------------------------------------------------------------------------
+
+async function notionApi(path: string, options?: { method?: string; body?: any }) {
+  const token = await getNotionToken();
+  const res = await fetch(`https://api.notion.com/v1/${path}`, {
+    method: options?.method ?? "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Notion-Version": NOTION_V,
+      "Content-Type": "application/json",
+    },
+    ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.message ?? `Notion API error ${res.status}`);
+  }
+  return data;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 async function getAllPages(databaseId: string): Promise<PageObjectResponse[]> {
-  const notion = await getNotionClientAsync();
   const pages: PageObjectResponse[] = [];
   let cursor: string | undefined;
 
-  // SDK v5 types may not expose databases.query — use untyped call
-  const queryDb = (notion.databases as Record<string, Function>).query
-    ?? ((params: Record<string, unknown>) =>
-      (notion as unknown as { request: Function }).request({
-        path: `databases/${databaseId}/query`,
-        method: "POST",
-        body: params,
-      }));
-
   do {
-    const res = await queryDb({
-      database_id: databaseId,
-      start_cursor: cursor,
-      page_size: 100,
-    }) as { results: Record<string, unknown>[]; has_more: boolean; next_cursor: string | null };
+    const res = await notionApi(`databases/${databaseId}/query`, {
+      method: "POST",
+      body: {
+        start_cursor: cursor,
+        page_size: 100,
+      },
+    });
 
     for (const r of res.results) {
       if (r.object === "page" && "properties" in r) {
@@ -363,19 +377,24 @@ export async function pullFromNotion(
 // PUSH: Database → Notion
 // ---------------------------------------------------------------------------
 
-// Wrappers to bypass SDK v5 strict property types
-function updatePage(notion: Client, params: Record<string, unknown>) {
-  return (notion.pages.update as Function)(params);
+async function updateNotionPage(pageId: string, properties: Record<string, unknown>) {
+  return notionApi(`pages/${pageId}`, {
+    method: "PATCH",
+    body: { properties },
+  });
 }
-function createPage(notion: Client, params: Record<string, unknown>) {
-  return (notion.pages.create as Function)(params) as Promise<{ id: string }>;
+
+async function createNotionPage(params: Record<string, unknown>) {
+  return notionApi("pages", {
+    method: "POST",
+    body: params,
+  }) as Promise<{ id: string }>;
 }
 
 export async function pushToNotion(
   syncLogId: string,
   lastSyncedAt: Date | null
 ): Promise<{ synced: number; errors: string[] }> {
-  const notion = await getNotionClientAsync();
   const errors: string[] = [];
   let synced = 0;
 
@@ -398,7 +417,7 @@ export async function pushToNotion(
   for (const ws of changedWs) {
     try {
       const props = buildNotionProperties(ws, "Workstream");
-      await updatePage(notion, { page_id: ws.notionPageId!, properties: props });
+      await updateNotionPage(ws.notionPageId!, props);
       synced++;
     } catch (err) {
       errors.push(
@@ -418,7 +437,7 @@ export async function pushToNotion(
   for (const del of changedDel) {
     try {
       const props = buildNotionProperties(del, "Deliverable");
-      await updatePage(notion, { page_id: del.notionPageId!, properties: props });
+      await updateNotionPage(del.notionPageId!, props);
       synced++;
     } catch (err) {
       errors.push(
@@ -447,7 +466,7 @@ export async function pushToNotion(
         },
         "Feature"
       );
-      await updatePage(notion, { page_id: init.notionPageId!, properties: props });
+      await updateNotionPage(init.notionPageId!, props);
       synced++;
     } catch (err) {
       errors.push(
@@ -467,7 +486,7 @@ export async function pushToNotion(
   for (const sub of changedSub) {
     try {
       const props = buildNotionProperties(sub, "Task");
-      await updatePage(notion, { page_id: sub.notionPageId!, properties: props });
+      await updateNotionPage(sub.notionPageId!, props);
       synced++;
     } catch (err) {
       errors.push(
@@ -489,7 +508,7 @@ export async function pushToNotion(
     try {
       const parentNotionId = sub.initiative?.notionPageId;
       const props = buildNotionProperties(sub, "Task");
-      const created = await createPage(notion, {
+      const created = await createNotionPage({
         parent: parentNotionId
           ? { page_id: parentNotionId }
           : { database_id: dbInfo.id },

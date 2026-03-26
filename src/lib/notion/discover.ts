@@ -1,4 +1,4 @@
-import { getNotionClientAsync } from "./client";
+import { getNotionClientAsync, getNotionToken } from "./client";
 
 export interface NotionDbInfo {
   id: string;
@@ -6,55 +6,70 @@ export interface NotionDbInfo {
   properties: Record<string, { id: string; type: string; name: string }>;
 }
 
-// Notion SDK v5 narrowed the SearchResponse type to exclude databases.
-// The API still returns them — we use `unknown` to avoid type conflicts.
-interface RawSearchResult {
-  object: string;
-  id: string;
-  title?: { plain_text: string }[];
+const NOTION_V = "2022-06-28";
+
+/**
+ * Raw fetch helper pinned to Notion API 2022-06-28.
+ * The older version returns `database` objects with IDs that work with
+ * databases.retrieve / databases.query (the newer SDK version returns
+ * `data_source` objects whose IDs are incompatible with those endpoints).
+ */
+async function notionFetch(path: string, options?: { method?: string; body?: any }) {
+  const token = await getNotionToken();
+  const res = await fetch(`https://api.notion.com/v1/${path}`, {
+    method: options?.method ?? "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Notion-Version": NOTION_V,
+      "Content-Type": "application/json",
+    },
+    ...(options?.body ? { body: JSON.stringify(options.body) } : {}),
+  });
+  return res.json();
 }
 
 /**
  * Search the workspace for a database by title.
  * Returns the first match with its property schema.
+ *
+ * Uses raw fetch with Notion API 2022-06-28 to get correct database IDs,
+ * since the SDK v5 returns data_source IDs that are not queryable.
  */
 export async function discoverDatabase(
   titleQuery: string
 ): Promise<NotionDbInfo | null> {
-  const notion = await getNotionClientAsync();
+  const searchData = await notionFetch("search", {
+    method: "POST",
+    body: {
+      query: titleQuery,
+      filter: { value: "database", property: "object" },
+      page_size: 10,
+    },
+  });
 
-  let results: RawSearchResult[] = [];
+  const results = (searchData.results ?? []) as any[];
 
-  // Try filtered search first, fall back to unfiltered if the API rejects the filter value
-  for (const filter of [
-    { value: "data_source", property: "object" },
-    { value: "database", property: "object" },
-    undefined,
-  ]) {
-    try {
-      const res = await (notion.search as Function)({
-        query: titleQuery,
-        ...(filter ? { filter } : {}),
-        page_size: 10,
-      });
-      results = (res.results ?? []) as RawSearchResult[];
-      break;
-    } catch {
-      continue;
-    }
-  }
-
-  const db = results.find((r) => {
-    if (r.object !== "database" && r.object !== "data_source") return false;
-    const title = r.title?.map((t) => t.plain_text).join("") ?? "";
+  const db = results.find((r: any) => {
+    if (r.object !== "database") return false;
+    const title = r.title?.map((t: any) => t.plain_text).join("") ?? "";
     return title.toLowerCase().includes(titleQuery.toLowerCase());
   });
 
-  if (!db) return null;
+  if (!db) {
+    console.log(`[discover] No database found matching "${titleQuery}". Search returned:`,
+      results.map((r: any) => ({ object: r.object, id: r.id }))
+    );
+    return null;
+  }
 
-  const full = await notion.databases.retrieve({
-    database_id: db.id,
-  }) as Record<string, unknown>;
+  console.log(`[discover] Found database "${titleQuery}" with ID: ${db.id}`);
+
+  // Retrieve full schema using the same old API version
+  const full = await notionFetch(`databases/${db.id}`);
+  if (full.object === "error") {
+    console.error(`[discover] databases.retrieve failed:`, full.message);
+    return null;
+  }
 
   const properties: NotionDbInfo["properties"] = {};
   const rawProps = (full.properties ?? {}) as Record<
@@ -67,7 +82,7 @@ export async function discoverDatabase(
 
   const titleArr = full.title as { plain_text: string }[] | undefined;
   const titleText = titleArr
-    ? titleArr.map((t) => t.plain_text).join("")
+    ? titleArr.map((t: any) => t.plain_text).join("")
     : titleQuery;
 
   return { id: full.id as string, title: titleText, properties };
@@ -79,29 +94,19 @@ export async function discoverDatabase(
 export async function listDatabases(): Promise<
   { id: string; title: string }[]
 > {
-  const notion = await getNotionClientAsync();
+  const searchData = await notionFetch("search", {
+    method: "POST",
+    body: {
+      filter: { value: "database", property: "object" },
+      page_size: 50,
+    },
+  });
 
-  let results: RawSearchResult[] = [];
-  for (const filter of [
-    { value: "data_source", property: "object" },
-    { value: "database", property: "object" },
-    undefined,
-  ]) {
-    try {
-      const res = await (notion.search as Function)({
-        ...(filter ? { filter } : {}),
-        page_size: 50,
-      });
-      results = (res.results ?? []) as RawSearchResult[];
-      break;
-    } catch {
-      continue;
-    }
-  }
+  const results = (searchData.results ?? []) as any[];
   return results
-    .filter((r) => r.object === "database" || r.object === "data_source")
-    .map((r) => {
-      const title = r.title?.map((t) => t.plain_text).join("") ?? "(untitled)";
+    .filter((r: any) => r.object === "database")
+    .map((r: any) => {
+      const title = r.title?.map((t: any) => t.plain_text).join("") ?? "(untitled)";
       return { id: r.id, title };
     });
 }

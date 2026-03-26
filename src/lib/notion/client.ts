@@ -36,6 +36,25 @@ export async function getNotionClientAsync(): Promise<Client> {
 }
 
 /**
+ * Get the raw Notion auth token for direct fetch calls.
+ */
+export async function getNotionToken(): Promise<string> {
+  try {
+    const account = await prisma.account.findFirst({
+      where: { provider: "notion", access_token: { not: null } },
+      orderBy: { id: "desc" },
+      select: { access_token: true },
+    });
+    if (account?.access_token) return account.access_token;
+  } catch {}
+
+  const token = process.env.NOTION_INTEGRATION_TOKEN;
+  if (token) return token;
+
+  throw new Error("No Notion token available.");
+}
+
+/**
  * Synchronous fallback using NOTION_INTEGRATION_TOKEN env var.
  */
 export function getNotionClient(): Client {
