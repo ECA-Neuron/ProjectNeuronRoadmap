@@ -25,7 +25,7 @@ export async function discoverDatabase(
 
   const res = await (notion.search as Function)({
     query: titleQuery,
-    filter: { value: "database", property: "object" },
+    filter: { value: "data_source", property: "object" },
     page_size: 5,
   });
 
@@ -67,7 +67,7 @@ export async function listDatabases(): Promise<
 > {
   const notion = getNotionClient();
   const res = await (notion.search as Function)({
-    filter: { value: "database", property: "object" },
+    filter: { value: "data_source", property: "object" },
     page_size: 50,
   });
 

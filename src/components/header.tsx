@@ -3,6 +3,7 @@
 import { useSession, signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { AutosaveIndicator } from "@/components/autosave-indicator";
+import { SyncStatus } from "@/components/sync-status";
 import Link from "next/link";
 
 const roleBadgeStyles: Record<string, string> = {
@@ -22,6 +23,7 @@ export function Header() {
           Project Neuron Program Hub
         </span>
         <AutosaveIndicator />
+        <SyncStatus />
       </div>
       <div className="flex items-center gap-4">
         {session?.user ? (

@@ -547,7 +547,7 @@ export async function runSync(
     await prisma.syncLog.update({
       where: { id: syncLog.id },
       data: {
-        status: allErrors.length > 0 ? "SUCCESS" : "SUCCESS",
+        status: allErrors.length > 0 ? "PARTIAL" : "SUCCESS",
         completedAt: new Date(),
         itemsSynced: pullResult.synced + pushResult.synced,
         errors: allErrors.length > 0 ? JSON.stringify(allErrors) : null,
@@ -569,6 +569,112 @@ export async function runSync(
       syncLogId: syncLog.id,
       pullResult: { synced: 0, errors: [msg] },
       pushResult: { synced: 0, errors: [] },
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pull-only sync (Notion → Database)
+// ---------------------------------------------------------------------------
+
+export async function runPullOnly(
+  syncType: "MANUAL" | "SCHEDULED" | "AUTO"
+): Promise<{
+  syncLogId: string;
+  pullResult: { synced: number; errors: string[] };
+}> {
+  const syncLog = await prisma.syncLog.create({
+    data: {
+      syncType,
+      direction: "PULL",
+      status: "RUNNING",
+    },
+  });
+
+  try {
+    const pullResult = await pullFromNotion(syncLog.id, syncType);
+
+    await prisma.syncLog.update({
+      where: { id: syncLog.id },
+      data: {
+        status: pullResult.errors.length > 0 ? "PARTIAL" : "SUCCESS",
+        completedAt: new Date(),
+        itemsSynced: pullResult.synced,
+        errors: pullResult.errors.length > 0 ? JSON.stringify(pullResult.errors) : null,
+      },
+    });
+
+    return { syncLogId: syncLog.id, pullResult };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await prisma.syncLog.update({
+      where: { id: syncLog.id },
+      data: {
+        status: "FAILED",
+        completedAt: new Date(),
+        errors: JSON.stringify([msg]),
+      },
+    });
+    return {
+      syncLogId: syncLog.id,
+      pullResult: { synced: 0, errors: [msg] },
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Push-only sync (Database → Notion)
+// ---------------------------------------------------------------------------
+
+export async function runPushOnly(
+  syncType: "MANUAL" | "SCHEDULED" | "AUTO"
+): Promise<{
+  syncLogId: string;
+  pushResult: { synced: number; errors: string[] };
+}> {
+  const lastSync = await prisma.syncLog.findFirst({
+    where: { status: { in: ["SUCCESS", "PARTIAL"] }, direction: { in: ["PUSH", "BIDIRECTIONAL"] } },
+    orderBy: { completedAt: "desc" },
+  });
+
+  const syncLog = await prisma.syncLog.create({
+    data: {
+      syncType,
+      direction: "PUSH",
+      status: "RUNNING",
+    },
+  });
+
+  try {
+    const pushResult = await pushToNotion(
+      syncLog.id,
+      lastSync?.completedAt ?? null
+    );
+
+    await prisma.syncLog.update({
+      where: { id: syncLog.id },
+      data: {
+        status: pushResult.errors.length > 0 ? "PARTIAL" : "SUCCESS",
+        completedAt: new Date(),
+        itemsSynced: pushResult.synced,
+        errors: pushResult.errors.length > 0 ? JSON.stringify(pushResult.errors) : null,
+      },
+    });
+
+    return { syncLogId: syncLog.id, pushResult };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await prisma.syncLog.update({
+      where: { id: syncLog.id },
+      data: {
+        status: "FAILED",
+        completedAt: new Date(),
+        errors: JSON.stringify([msg]),
+      },
+    });
+    return {
+      syncLogId: syncLog.id,
+      pushResult: { synced: 0, errors: [msg] },
     };
   }
 }
