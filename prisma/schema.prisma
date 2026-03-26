@@ -108,6 +108,9 @@ model Workstream {
   status               String    @default("IN_PROGRESS") // NOT_STARTED | IN_PROGRESS | DONE
   sortOrder            Int       @default(0)
   color                String?   // hex color for Gantt bars
+  notionPageId         String?   @unique
+  startDate            DateTime?
+  endDate              DateTime?
 
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
@@ -115,10 +118,33 @@ model Workstream {
 
   program              Program   @relation(fields: [programId], references: [id], onDelete: Cascade)
   createdBy            User?     @relation("WorkstreamCreatedBy", fields: [createdById], references: [id])
+  deliverables         Deliverable[]
   initiatives          Initiative[]
   partnerLinks         PartnerWorkstream[]
   openIssues           OpenIssue[]
   docs                 Documentation[] @relation("WorkstreamDocs")
+}
+
+// ─── DELIVERABLE ──────────────────────────────────────
+// Maps to Notion "Deliverable" level — sits between Workstream and Initiative (Feature)
+
+model Deliverable {
+  id              String    @id @default(cuid())
+  workstreamId    String
+  name            String
+  description     String?
+  status          String    @default("NOT_STARTED") // NOT_STARTED | IN_PROGRESS | BLOCKED | DONE
+  notionPageId    String?   @unique
+  startDate       DateTime?
+  endDate         DateTime?
+  points          Int       @default(0)
+  sortOrder       Int       @default(0)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  workstream      Workstream   @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
+  initiatives     Initiative[]
 }
 
 // ─── INITIATIVE ────────────────────────────────────────
@@ -126,6 +152,7 @@ model Workstream {
 model Initiative {
   id                String    @id @default(cuid())
   workstreamId      String
+  deliverableId     String?   // optional FK — Notion Feature belongs to a Deliverable
   name              String
   description       String?
   category          String    @default("TOOLING")
@@ -139,15 +166,19 @@ model Initiative {
   ownerId           String?   // FK to User — subcomponent owner
   needsRefinement   Boolean   @default(false)
   sortOrder         Int       @default(0)
+  notionPageId      String?   @unique
+  startDate         DateTime?
+  endDate           DateTime?
 
   archivedAt        DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
   createdById       String?
 
-  workstream        Workstream @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
-  createdBy         User?      @relation("InitiativeCreatedBy", fields: [createdById], references: [id])
-  owner             User?      @relation("InitiativeOwner", fields: [ownerId], references: [id])
+  workstream        Workstream   @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
+  deliverable       Deliverable? @relation(fields: [deliverableId], references: [id], onDelete: SetNull)
+  createdBy         User?        @relation("InitiativeCreatedBy", fields: [createdById], references: [id])
+  owner             User?        @relation("InitiativeOwner", fields: [ownerId], references: [id])
 
   totalPoints       Int       @default(0) // total story points for this initiative
 
@@ -176,6 +207,9 @@ model SubTask {
   sortOrder         Int       @default(0)
   assigneeId        String?   // FK to Person — who is working on this subtask
   assignedOrganization String?   // 'ECLIPSE' | 'ACCENTURE' — which org is assigned to this subcomponent
+  notionPageId      String?   @unique
+  startDate         DateTime?
+  endDate           DateTime?
 
   // Story-point estimation inputs
   estimatedDays     Float?    // estimated effort in days
@@ -474,4 +508,18 @@ model IssueMention {
   issue      OpenIssue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
   comment    IssueComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
   person     Person       @relation(fields: [personId], references: [id], onDelete: Cascade)
+}
+
+// ─── SYNC LOG ──────────────────────────────────────────
+// Tracks Notion sync history for admin review.
+
+model SyncLog {
+  id            String    @id @default(cuid())
+  syncType      String    // MANUAL | SCHEDULED
+  direction     String    // PULL | PUSH | BIDIRECTIONAL
+  status        String    @default("RUNNING") // RUNNING | SUCCESS | FAILED
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  itemsSynced   Int       @default(0)
+  errors        String?   // JSON array of error messages
 }

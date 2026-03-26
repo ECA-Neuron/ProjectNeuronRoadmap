@@ -15,6 +15,7 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@notionhq/client": "^5.15.0",
     "@prisma/client": "^5.20.0",
     "bcryptjs": "^2.4.3",
     "clsx": "^2.1.0",

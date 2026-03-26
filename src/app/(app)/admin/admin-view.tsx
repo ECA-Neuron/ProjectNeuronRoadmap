@@ -31,20 +31,42 @@ interface RefinementInit {
   workstream: { name: string };
 }
 
+interface SyncLogEntry {
+  id: string;
+  syncType: string;
+  direction: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  itemsSynced: number;
+  errors: string | null;
+}
+
 export function AdminView({
   users: initialUsers,
   people: initialPeople,
   refinementInitiatives,
+  recentSyncs: initialSyncs,
 }: {
   users: User[];
   people: PersonRef[];
   refinementInitiatives: RefinementInit[];
+  recentSyncs: SyncLogEntry[];
 }) {
   const [users, setUsers] = useState(initialUsers);
   const [people, setPeople] = useState(initialPeople);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [role, setRole] = useState("MEMBER");
+  const [syncs, setSyncs] = useState(initialSyncs);
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    success: boolean;
+    pulled?: number;
+    pushed?: number;
+    errors?: string[];
+    error?: string;
+  } | null>(null);
 
   const handleAddUser = async () => {
     if (!email) return;
@@ -82,12 +104,121 @@ export function AdminView({
     window.location.reload();
   };
 
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ syncType: "MANUAL" }),
+      });
+      const data = await res.json();
+      setSyncResult(data);
+      if (data.success) {
+        const logsRes = await fetch("/api/sync");
+        const logsData = await logsRes.json();
+        if (logsData.logs) setSyncs(logsData.logs);
+      }
+    } catch (err) {
+      setSyncResult({
+        success: false,
+        error: err instanceof Error ? err.message : "Sync failed",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Admin</h1>
-        <p className="text-muted-foreground mt-1">User management &amp; date refinement</p>
+        <p className="text-muted-foreground mt-1">User management, Notion sync &amp; date refinement</p>
       </div>
+
+      {/* Notion Sync */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Notion Sync</span>
+            <Button onClick={handleSync} disabled={syncing} size="sm">
+              {syncing ? "Syncing..." : "Sync Now"}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {syncResult && (
+            <div
+              className={`mb-4 rounded-md p-3 text-sm ${
+                syncResult.success
+                  ? "bg-green-50 text-green-800 border border-green-200"
+                  : "bg-red-50 text-red-800 border border-red-200"
+              }`}
+            >
+              {syncResult.success ? (
+                <>
+                  <p className="font-medium">Sync completed</p>
+                  <p>Pulled {syncResult.pulled ?? 0} items from Notion, pushed {syncResult.pushed ?? 0} items back.</p>
+                  {syncResult.errors && syncResult.errors.length > 0 && (
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-xs font-medium">
+                        {syncResult.errors.length} warning(s)
+                      </summary>
+                      <ul className="mt-1 list-disc pl-4 text-xs">
+                        {syncResult.errors.map((e, i) => (
+                          <li key={i}>{e}</li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </>
+              ) : (
+                <p>{syncResult.error ?? "Sync failed"}</p>
+              )}
+            </div>
+          )}
+
+          <p className="text-xs text-muted-foreground mb-3">
+            Two-way sync with the &ldquo;Neuron Workstreams Roadmap&rdquo; Notion database.
+            Pulls new data from Notion and pushes dashboard changes back.
+          </p>
+
+          {syncs.length > 0 && (
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b">
+                  <th className="text-left p-1.5">Time</th>
+                  <th className="text-left p-1.5">Type</th>
+                  <th className="text-left p-1.5">Status</th>
+                  <th className="text-left p-1.5">Items</th>
+                </tr>
+              </thead>
+              <tbody>
+                {syncs.map((s) => (
+                  <tr key={s.id} className="border-b">
+                    <td className="p-1.5">{new Date(s.startedAt).toLocaleString()}</td>
+                    <td className="p-1.5">
+                      <Badge variant="outline" className="text-[10px]">
+                        {s.syncType}
+                      </Badge>
+                    </td>
+                    <td className="p-1.5">
+                      <Badge
+                        variant={s.status === "SUCCESS" ? "default" : s.status === "FAILED" ? "destructive" : "secondary"}
+                        className="text-[10px]"
+                      >
+                        {s.status}
+                      </Badge>
+                    </td>
+                    <td className="p-1.5">{s.itemsSynced}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Add user */}
       <Card>

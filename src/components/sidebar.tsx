@@ -25,6 +25,7 @@ const navItems = [
   { href: "/my-dashboard", label: "My Dashboard", icon: "👤" },
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/roadmap", label: "Roadmap (FY26–FY28)", icon: "🗺️" },
+  { href: "/timeline", label: "Timeline", icon: "📅" },
   { href: "/burndown", label: "Burndown", icon: "📉" },
   { href: "/workstreams", label: "Workstreams", icon: "⚡", children: workstreamLinks },
   { href: "/open-issues", label: "Open Issues", icon: "🚩" },

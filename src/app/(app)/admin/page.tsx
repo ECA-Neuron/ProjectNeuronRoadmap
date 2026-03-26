@@ -13,7 +13,7 @@ export default async function AdminPage() {
     redirect("/dashboard");
   }
 
-  const [users, people, needsRefinement] = await Promise.all([
+  const [users, people, needsRefinement, recentSyncs] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
       select: { id: true, email: true, name: true, role: true, createdAt: true },
@@ -27,14 +27,23 @@ export default async function AdminPage() {
       include: { workstream: true },
       orderBy: { name: "asc" },
     }),
+    prisma.syncLog.findMany({
+      orderBy: { startedAt: "desc" },
+      take: 5,
+    }),
   ]);
 
   type SerializedUser = { id: string; email: string; name: string | null; role: string; createdAt: string };
+  const serializedSyncs = serializeForClient(recentSyncs) as unknown as {
+    id: string; syncType: string; direction: string; status: string;
+    startedAt: string; completedAt: string | null; itemsSynced: number; errors: string | null;
+  }[];
   return (
     <AdminView
       users={serializeForClient(users) as unknown as SerializedUser[]}
       people={serializeForClient(people)}
       refinementInitiatives={serializeForClient(needsRefinement)}
+      recentSyncs={serializedSyncs}
     />
   );
 }

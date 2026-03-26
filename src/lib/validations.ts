@@ -43,6 +43,17 @@ export const workstreamSchema = z.object({
   programId: z.string().min(1),
 });
 
+// ─── Deliverable ──────────────────────────────
+export const deliverableSchema = z.object({
+  workstreamId: z.string().min(1, "Workstream is required"),
+  name: z.string().min(1, "Name is required"),
+  description: z.string().optional().nullable(),
+  status: z.enum(["NOT_STARTED", "IN_PROGRESS", "BLOCKED", "DONE"]).optional(),
+  startDate: z.string().optional().nullable(),
+  endDate: z.string().optional().nullable(),
+  points: z.coerce.number().int().min(0).optional(),
+});
+
 // ─── Milestone ─────────────────────────────────
 export const milestoneSchema = z.object({
   name: z.string().min(1, "Name is required"),
