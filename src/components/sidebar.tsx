@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
+  { href: "/my-dashboard", label: "My Dashboard", icon: "👤" },
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/roadmap", label: "Roadmap (FY26–FY28)", icon: "🗺️" },
   { href: "/admin", label: "Admin", icon: "⚙️", adminOnly: true },

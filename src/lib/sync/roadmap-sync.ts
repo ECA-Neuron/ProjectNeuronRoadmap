@@ -71,6 +71,32 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, "");
 }
 
+const personCache = new Map<string, string>();
+
+async function findOrCreatePerson(name: string): Promise<string> {
+  const key = name.toLowerCase().trim();
+  if (personCache.has(key)) return personCache.get(key)!;
+
+  let person = await prisma.person.findFirst({
+    where: { name: { equals: name, mode: "insensitive" } },
+  });
+
+  if (!person) {
+    const initials = name
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 3);
+    person = await prisma.person.create({
+      data: { name, initials },
+    });
+  }
+
+  personCache.set(key, person.id);
+  return person.id;
+}
+
 // ---------------------------------------------------------------------------
 // PULL: Notion → Database
 // ---------------------------------------------------------------------------
@@ -280,6 +306,7 @@ export async function pullFromNotion(
                   endDate: item.endDate,
                   totalPoints: item.points,
                   deliverableId,
+                  ownerInitials: item.assignName ?? existing.ownerInitials,
                 },
               });
             }
@@ -295,6 +322,7 @@ export async function pullFromNotion(
                 endDate: item.endDate,
                 totalPoints: item.points,
                 notionPageId: item.notionPageId,
+                ownerInitials: item.assignName,
               },
             });
             notionToDbId.set(item.notionPageId, init.id);
@@ -328,6 +356,10 @@ export async function pullFromNotion(
             continue;
           }
 
+          const assigneeId = item.assignName
+            ? await findOrCreatePerson(item.assignName)
+            : null;
+
           const existing = await prisma.subTask.findUnique({
             where: { notionPageId: item.notionPageId },
           });
@@ -342,6 +374,7 @@ export async function pullFromNotion(
                   startDate: item.startDate,
                   endDate: item.endDate,
                   points: item.points,
+                  ...(assigneeId ? { assigneeId } : {}),
                 },
               });
             }
@@ -356,6 +389,7 @@ export async function pullFromNotion(
                 endDate: item.endDate,
                 points: item.points,
                 notionPageId: item.notionPageId,
+                ...(assigneeId ? { assigneeId } : {}),
               },
             });
             notionToDbId.set(item.notionPageId, sub.id);
