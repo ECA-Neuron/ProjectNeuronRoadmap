@@ -54,24 +54,28 @@ interface DepEdge { initiativeId: string; dependsOnId: string }
 interface PersonOption { id: string; name: string }
 
 const LEVEL_COLORS: Record<Level, string> = {
-  Workstream:  "#64748b",
-  Deliverable: "#e67e22",
+  Workstream:  "#6366f1",
+  Deliverable: "#f59e0b",
   Feature:     "#3b82f6",
-  Task:        "#22c55e",
+  Task:        "#10b981",
 };
 
 const STATUS_OPACITY: Record<string, number> = {
-  "Not started": 0.4, NOT_STARTED: 0.4,
+  "Not started": 0.35, NOT_STARTED: 0.35,
   "In progress": 1, IN_PROGRESS: 1,
-  BLOCKED: 0.7, Done: 0.6, DONE: 0.6,
+  BLOCKED: 0.65, Done: 0.5, DONE: 0.5,
 };
 
 const LEVEL_LABELS: Record<Level, string> = {
   Workstream: "Workstream", Deliverable: "Deliverable", Feature: "Feature", Task: "Task",
 };
 
-const ROW_H = 32;
-const LEFT_W = 360;
+const LEVEL_ICONS: Record<Level, string> = {
+  Workstream: "◆", Deliverable: "◇", Feature: "○", Task: "·",
+};
+
+const ROW_H = 36;
+const LEFT_W = 380;
 const DAY_W = 3;
 
 function toDay(d: string | null): number | null {
@@ -187,19 +191,19 @@ function DragInsertPopover({ level, parentId, startDay, endDay, top, left, onSav
     if (e.key === "Escape") onCancel();
   };
 
-  const fieldCls = "w-full h-7 text-[11px] bg-white border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-blue-400";
+  const fieldCls = "w-full h-7 text-[11px] bg-background border border-border/60 rounded-lg px-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-colors";
   const labelCls = "block text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5";
 
   return (
     <div
-      className="absolute z-50 bg-white rounded-lg shadow-xl border border-border p-3 w-[260px]"
+      className="absolute z-50 bg-card rounded-xl shadow-elevated border border-border/60 p-4 w-[260px] backdrop-blur-sm"
       style={{ top, left: Math.max(4, left) }}
       onClick={e => e.stopPropagation()}
       onMouseDown={e => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">New {LEVEL_LABELS[level]}</span>
-        <button onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+        <button onClick={onCancel} className="w-5 h-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-xs">✕</button>
       </div>
 
       <div className="text-[10px] text-muted-foreground mb-2">
@@ -336,20 +340,20 @@ function ItemPopover({ mode, anchorRect, onSaved, onCancel }: ItemPopoverProps) 
     if (e.key === "Escape") onCancel();
   };
 
-  const fieldCls = "w-full h-7 text-[11px] bg-white border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-blue-400";
+  const fieldCls = "w-full h-7 text-[11px] bg-background border border-border/60 rounded-lg px-2 focus:outline-none focus:ring-2 focus:ring-blue-500/30 transition-colors";
   const labelCls = "block text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5";
 
   return (
     <div
-      className="fixed z-[100] bg-white rounded-lg shadow-xl border border-border p-3 w-[280px]"
+      className="fixed z-[100] bg-card rounded-xl shadow-elevated border border-border/60 p-4 w-[280px] backdrop-blur-sm"
       style={{ top: anchorRect.top, left: Math.min(anchorRect.left, window.innerWidth - 300) }}
       onClick={e => e.stopPropagation()}
     >
-      <div className="flex items-center justify-between mb-2">
+      <div className="flex items-center justify-between mb-3">
         <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
           {isEdit ? "Edit" : "New"} {LEVEL_LABELS[level]}
         </span>
-        <button onClick={onCancel} className="text-xs text-muted-foreground hover:text-foreground">✕</button>
+        <button onClick={onCancel} className="w-5 h-5 flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors text-xs">✕</button>
       </div>
 
       <div className="space-y-2">
@@ -573,8 +577,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
     const startX = sd !== null ? (sd - minDay) * DAY_W : (ed! - minDay) * DAY_W - 20;
     const endX = ed !== null ? (ed - minDay) * DAY_W : (sd! - minDay) * DAY_W + 20;
     const barW = Math.max(endX - startX, 4);
-    const barH = row.level === "Workstream" ? 10 : row.level === "Deliverable" ? 8 : 6;
-    const y = 36 + vi * ROW_H + (ROW_H - barH) / 2;
+    const barH = row.level === "Workstream" ? 14 : row.level === "Deliverable" ? 10 : row.level === "Feature" ? 8 : 6;
+    const y = 40 + vi * ROW_H + (ROW_H - barH) / 2;
     return { startX, endX, barW, barH, y, sd, ed };
   }, [minDay, resizeDrag]);
 
@@ -592,7 +596,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
   const handleGanttMouseDown = useCallback((e: React.MouseEvent) => {
     if (popover) return;
     const { x, y } = getMousePos(e);
-    const rowIdx = Math.floor((y - 36) / ROW_H);
+    const rowIdx = Math.floor((y - 40) / ROW_H);
     if (rowIdx < 0 || rowIdx >= visible.length) return;
     const row = visible[rowIdx];
 
@@ -656,7 +660,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
     if (popover) return;
 
     // Hover detection for bars and add rows
-    const rowIdx = Math.floor((y - 36) / ROW_H);
+    const rowIdx = Math.floor((y - 40) / ROW_H);
     if (rowIdx >= 0 && rowIdx < visible.length && visible[rowIdx].kind === "add") {
       setHoverVi(rowIdx);
       setHoverX(x);
@@ -706,7 +710,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
 
       const sd = xToDay(x1);
       const ed = xToDay(x2);
-      setPopover({ vi: insertDrag.vi, level: insertDrag.level, parentId: insertDrag.parentId, startDay: sd, endDay: ed, top: 36 + insertDrag.vi * ROW_H + ROW_H + 4, left: x1 });
+      setPopover({ vi: insertDrag.vi, level: insertDrag.level, parentId: insertDrag.parentId, startDay: sd, endDay: ed, top: 40 + insertDrag.vi * ROW_H + ROW_H + 4, left: x1 });
       setInsertDrag(null);
       setHoverVi(null);
     }
@@ -716,18 +720,18 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
     if (!insertDrag?.active && !resizeDrag) setHoverVi(null);
   }, [insertDrag, resizeDrag]);
 
-  if (itemRows.length === 0) return <div className="text-center py-12 text-muted-foreground">No roadmap data.</div>;
+  if (itemRows.length === 0) return <div className="text-center py-16 text-muted-foreground text-sm">No roadmap data. Pull from Notion to get started.</div>;
 
   // Ghost bar for insert drag
   const ghostBar = (() => {
     if (insertDrag?.active) {
       const x1 = Math.min(insertDrag.startX, insertDrag.currentX);
       const x2 = Math.max(insertDrag.startX, insertDrag.currentX);
-      const y = 36 + insertDrag.vi * ROW_H + (ROW_H - 6) / 2;
+      const y = 40 + insertDrag.vi * ROW_H + (ROW_H - 6) / 2;
       return { x: x1, y, w: x2 - x1, label: `${fmtShort(xToDay(x1))} → ${fmtShort(xToDay(x2))}` };
     }
     if (hoverVi !== null && !popover) {
-      const y = 36 + hoverVi * ROW_H + (ROW_H - 6) / 2;
+      const y = 40 + hoverVi * ROW_H + (ROW_H - 6) / 2;
       return { x: hoverX - 30, y, w: 60, label: "Click & drag to add" };
     }
     return null;
@@ -745,18 +749,18 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
     const row = visible[resizeDrag.vi];
     if (row.kind !== "item") return null;
     const barH = row.level === "Workstream" ? 10 : row.level === "Deliverable" ? 8 : 6;
-    const y = 36 + resizeDrag.vi * ROW_H + (ROW_H - barH) / 2 - 16;
+    const y = 40 + resizeDrag.vi * ROW_H + (ROW_H - barH) / 2 - 16;
     const leftX = (sd - minDay) * DAY_W;
     return { x: leftX, y, label: `${fmtShort(sd)} → ${fmtShort(ed)}` };
   })();
 
-  const svgH = 36 + visible.length * ROW_H;
+  const svgH = 40 + visible.length * ROW_H;
 
   return (
-    <div className="border rounded-lg overflow-hidden bg-card flex" style={{ height: `${Math.min(visible.length * ROW_H + 36, 700)}px` }}>
+    <div className="border border-border/60 rounded-xl overflow-hidden bg-card flex shadow-card" style={{ height: `${Math.min(visible.length * ROW_H + 40, 720)}px` }}>
       {/* Left panel */}
-      <div className="shrink-0 overflow-y-auto border-r" style={{ width: LEFT_W }}>
-        <div className="sticky top-0 bg-muted/40 border-b text-[11px] text-muted-foreground font-medium px-3 flex items-center" style={{ height: 36 }}>
+      <div className="shrink-0 overflow-y-auto border-r border-border/40" style={{ width: LEFT_W }}>
+        <div className="sticky top-0 z-10 bg-muted/30 backdrop-blur-sm border-b border-border/40 text-[11px] text-muted-foreground font-semibold px-4 flex items-center tracking-wide uppercase" style={{ height: 40 }}>
           Name
         </div>
         {visible.map((row, vi) => {
@@ -764,16 +768,14 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
             return (
               <div
                 key={`add-${row.level}:${row.parentId ?? "root"}`}
-                className={`flex items-center border-b transition-colors ${hoverVi === vi || (insertDrag?.vi === vi) || (popover?.vi === vi) ? "bg-blue-50/60" : "hover:bg-accent/20"}`}
-                style={{ height: ROW_H, paddingLeft: `${8 + row.depth * 18 + 18}px` }}
+                className={`flex items-center border-b border-border/20 transition-colors ${hoverVi === vi || (insertDrag?.vi === vi) || (popover?.vi === vi) ? "bg-blue-500/5" : "hover:bg-accent/10"}`}
+                style={{ height: ROW_H, paddingLeft: `${12 + row.depth * 20 + 20}px` }}
               >
                 <button
                   onClick={(e) => openAddPopover(row.level, row.parentId, e)}
-                  className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-blue-600 transition-colors"
+                  className="flex items-center gap-1.5 text-[10px] text-muted-foreground/60 hover:text-blue-500 transition-colors"
                 >
-                  <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
                   {LEVEL_LABELS[row.level]}
                 </button>
               </div>
@@ -782,23 +784,25 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
 
           const hasKids = row.childCount > 0;
           const isWs = row.level === "Workstream";
+          const isDel = row.level === "Deliverable";
           const isEditing = itemPopover?.mode.kind === "edit" && itemPopover.mode.item.id === row.id;
           return (
-            <div key={row.id} className={`group/row flex items-center border-b hover:bg-accent/20 ${isWs ? "bg-muted/20" : ""} ${isEditing ? "bg-blue-50/50" : ""}`} style={{ height: ROW_H, paddingLeft: `${8 + row.depth * 18}px` }}>
+            <div key={row.id} className={`group/row flex items-center border-b border-border/20 transition-colors hover:bg-accent/10 ${isWs ? "bg-muted/15" : ""} ${isEditing ? "bg-blue-500/5" : ""}`} style={{ height: ROW_H, paddingLeft: `${12 + row.depth * 20}px` }}>
               {hasKids ? (
-                <button onClick={() => toggle(row.id)} className="w-4 h-4 flex items-center justify-center text-[9px] text-muted-foreground hover:text-foreground rounded shrink-0 mr-1">
-                  {collapsed.has(row.id) ? "▶" : "▼"}
+                <button onClick={() => toggle(row.id)} className="w-5 h-5 flex items-center justify-center text-[9px] text-muted-foreground/60 hover:text-foreground hover:bg-muted/50 rounded-md shrink-0 mr-1.5 transition-colors">
+                  <svg className={`w-3 h-3 transition-transform duration-150 ${collapsed.has(row.id) ? "" : "rotate-90"}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
                 </button>
-              ) : <span className="w-4 mr-1 shrink-0" />}
-              <span className={`truncate text-[12px] flex-1 min-w-0 ${isWs ? "font-semibold" : ""}`} title={row.name}>{row.name}</span>
+              ) : <span className="w-5 mr-1.5 shrink-0 flex items-center justify-center text-[8px] text-muted-foreground/40">{LEVEL_ICONS[row.level]}</span>}
+              <span className={`truncate text-[12px] flex-1 min-w-0 leading-tight ${isWs ? "font-semibold" : isDel ? "font-medium" : ""}`} title={row.name}>{row.name}</span>
+              {row.assign && (
+                <span className="text-[9px] text-muted-foreground/50 mr-1 shrink-0">{row.assign}</span>
+              )}
               <button
                 onClick={(e) => openEditPopover(row, e)}
-                className="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover/row:opacity-100 hover:bg-accent text-muted-foreground hover:text-foreground transition-all shrink-0 mr-1"
+                className="w-5 h-5 flex items-center justify-center rounded-md opacity-0 group-hover/row:opacity-100 hover:bg-muted/50 text-muted-foreground/60 hover:text-foreground transition-all shrink-0 mr-1"
                 title="Edit item"
               >
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                </svg>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L6.832 19.82a4.5 4.5 0 0 1-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 0 1 1.13-1.897L16.863 4.487Zm0 0L19.5 7.125" /></svg>
               </button>
             </div>
           );
@@ -817,9 +821,9 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
           onMouseLeave={handleGanttMouseLeave}
         >
           {/* Month header */}
-          <div className="sticky top-0 bg-muted/40 border-b z-10 flex" style={{ height: 36, width: totalWidth }}>
+          <div className="sticky top-0 bg-muted/30 backdrop-blur-sm border-b border-border/40 z-10 flex" style={{ height: 40, width: totalWidth }}>
             {months.map((m, i) => (
-              <div key={i} className="absolute text-[10px] text-muted-foreground font-medium border-l border-border/50 pl-1 flex items-center" style={{ left: m.x, height: 36 }}>
+              <div key={i} className="absolute text-[10px] text-muted-foreground/70 font-medium border-l border-border/30 pl-2 flex items-center" style={{ left: m.x, height: 40 }}>
                 {m.label}
               </div>
             ))}
@@ -827,7 +831,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
 
           {/* Grid lines */}
           {months.map((m, i) => (
-            <div key={i} className="absolute top-[36px] bottom-0 border-l border-border/20" style={{ left: m.x }} />
+            <div key={i} className="absolute top-[40px] bottom-0 border-l border-border/10" style={{ left: m.x }} />
           ))}
 
           {/* Add-row hover/drag stripe backgrounds */}
@@ -839,14 +843,15 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
               <div
                 key={`stripe-${vi}`}
                 className="absolute left-0 right-0 bg-blue-50/40 border-y border-blue-200/40"
-                style={{ top: 36 + vi * ROW_H, height: ROW_H, cursor: "crosshair" }}
+                style={{ top: 40 + vi * ROW_H, height: ROW_H, cursor: "crosshair" }}
               />
             );
           })}
 
           {/* Today line */}
-          <div className="absolute top-0 bottom-0 z-20 pointer-events-none" style={{ left: todayX, width: 2, backgroundColor: "#ef4444" }}>
-            <div className="absolute -top-0 left-1/2 -translate-x-1/2 bg-red-500 text-white text-[8px] px-1 rounded-b font-medium" style={{ top: 0 }}>
+          <div className="absolute top-0 bottom-0 z-20 pointer-events-none" style={{ left: todayX }}>
+            <div className="absolute top-0 bottom-0 w-px bg-violet-500/60" />
+            <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-violet-600 text-white text-[8px] px-1.5 py-0.5 rounded-full font-semibold shadow-sm whitespace-nowrap">
               Today
             </div>
           </div>
@@ -854,8 +859,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
           {/* SVG layer for hierarchy lines + dependency arrows */}
           <svg className="absolute top-0 left-0 pointer-events-none z-[5]" width={totalWidth} height={svgH}>
             <defs>
-              <marker id="dep-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                <path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8" />
+              <marker id="dep-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="#f97316" fillOpacity={0.7} />
               </marker>
             </defs>
 
@@ -868,8 +873,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
               const pGeom = getBarGeom(parentRow, edge.parentVi);
               const cGeom = getBarGeom(childRow, edge.childVi);
 
-              const parentMidY = 36 + edge.parentVi * ROW_H + ROW_H / 2;
-              const childMidY = 36 + edge.childVi * ROW_H + ROW_H / 2;
+              const parentMidY = 40 + edge.parentVi * ROW_H + ROW_H / 2;
+              const childMidY = 40 + edge.childVi * ROW_H + ROW_H / 2;
 
               let anchorX: number;
               if (pGeom) {
@@ -907,8 +912,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
 
                 const fromEndX = fromGeom.endX;
                 const toStartX = toGeom.startX;
-                const fromY = 36 + fromVi * ROW_H + ROW_H / 2;
-                const toY = 36 + toVi * ROW_H + ROW_H / 2;
+                const fromY = 40 + fromVi * ROW_H + ROW_H / 2;
+                const toY = 40 + toVi * ROW_H + ROW_H / 2;
 
                 const dx = toStartX - fromEndX;
                 if (Math.abs(toY - fromY) < 4) {
@@ -930,29 +935,40 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
             const { startX, barW, barH, y } = geom;
             const opacity = STATUS_OPACITY[row.status] ?? 0.8;
             const isResizing = resizeDrag?.vi === vi;
+            const isMilestone = barW < 8;
+            const radius = row.level === "Workstream" ? 5 : row.level === "Deliverable" ? 4 : 3;
 
             return (
-              <div key={row.id} className="absolute group" style={{ left: startX, top: y, width: barW, height: barH }}>
-                {/* Bar body */}
-                <div
-                  className="w-full h-full rounded-sm"
-                  style={{ backgroundColor: row.color, opacity: isResizing ? 0.9 : opacity, cursor: "grab" }}
-                  title={`${row.name}\n${row.startDate ?? "?"} → ${row.endDate ?? "?"}`}
-                />
-                {/* Left resize handle */}
-                <div
-                  className="absolute top-0 h-full opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ left: -HANDLE_W / 2, width: HANDLE_W, cursor: "col-resize" }}
-                >
-                  <div className="w-[2px] h-full bg-white/80 rounded mx-auto" />
-                </div>
-                {/* Right resize handle */}
-                <div
-                  className="absolute top-0 h-full opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ right: -HANDLE_W / 2, width: HANDLE_W, cursor: "col-resize" }}
-                >
-                  <div className="w-[2px] h-full bg-white/80 rounded mx-auto" />
-                </div>
+              <div key={row.id} className="absolute group" style={{ left: startX, top: y, width: Math.max(barW, 6), height: barH }}>
+                {isMilestone ? (
+                  <div
+                    className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rotate-45"
+                    style={{ width: barH + 2, height: barH + 2, backgroundColor: row.color, opacity: isResizing ? 0.9 : opacity, cursor: "grab" }}
+                    title={`${row.name}\n${row.startDate ?? "?"} → ${row.endDate ?? "?"}`}
+                  />
+                ) : (
+                  <div
+                    className="w-full h-full transition-shadow hover:shadow-md"
+                    style={{ backgroundColor: row.color, opacity: isResizing ? 0.9 : opacity, cursor: "grab", borderRadius: radius }}
+                    title={`${row.name}\n${row.startDate ?? "?"} → ${row.endDate ?? "?"}`}
+                  />
+                )}
+                {!isMilestone && (
+                  <>
+                    <div
+                      className="absolute top-0 h-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ left: -HANDLE_W / 2, width: HANDLE_W, cursor: "col-resize" }}
+                    >
+                      <div className="w-[2px] h-full bg-white/80 rounded mx-auto" />
+                    </div>
+                    <div
+                      className="absolute top-0 h-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      style={{ right: -HANDLE_W / 2, width: HANDLE_W, cursor: "col-resize" }}
+                    >
+                      <div className="w-[2px] h-full bg-white/80 rounded mx-auto" />
+                    </div>
+                  </>
+                )}
               </div>
             );
           })}
