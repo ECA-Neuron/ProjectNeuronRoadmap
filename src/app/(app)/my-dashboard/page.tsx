@@ -14,14 +14,12 @@ export default async function MyDashboardPage() {
   const userName = session.user.name ?? "";
   const userEmail = session.user.email ?? "";
 
-  // Compute initials for matching (e.g., "Jacky Chen" → "JC")
   const userInitials = userName
     .split(/\s+/)
     .map((w) => w[0])
     .join("")
     .toUpperCase();
 
-  // Find the user's Person record (linked via name match)
   const person = await prisma.person.findFirst({
     where: {
       OR: [
@@ -31,7 +29,6 @@ export default async function MyDashboardPage() {
     },
   });
 
-  // Fetch tasks assigned to this person
   const subTasks = person
     ? await prisma.subTask.findMany({
         where: { assigneeId: person.id },
@@ -47,13 +44,11 @@ export default async function MyDashboardPage() {
       })
     : [];
 
-  // Fetch initiatives/features owned by this user (match full name OR initials)
   const initiatives = await prisma.initiative.findMany({
     where: {
       OR: [
         { ownerInitials: { equals: userName, mode: "insensitive" } },
         { ownerInitials: { equals: userInitials, mode: "insensitive" } },
-        // Also include parent features of the user's tasks
         ...(person
           ? [{ subTasks: { some: { assigneeId: person.id } } }]
           : []),
@@ -62,7 +57,11 @@ export default async function MyDashboardPage() {
     include: {
       workstream: { select: { id: true, name: true } },
       deliverable: { select: { id: true, name: true } },
-      subTasks: true,
+      subTasks: {
+        include: {
+          assignee: { select: { id: true, name: true, initials: true } },
+        },
+      },
     },
     orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
   });
@@ -81,18 +80,68 @@ export default async function MyDashboardPage() {
           subTask: { select: { id: true, name: true } },
           assignees: { include: { person: { select: { id: true, name: true, initials: true } } } },
         },
-        orderBy: [
-          { severity: "asc" },
-          { createdAt: "desc" },
-        ],
+        orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
       })
     : [];
+
+  // Fetch progress logs for this user's tasks (for personal burndown)
+  const myTaskIds = subTasks.map(t => t.id);
+  const myFeatureIds = initiatives.map(i => i.id);
+  const myProgressLogs = (myTaskIds.length > 0 || myFeatureIds.length > 0)
+    ? await prisma.progressLog.findMany({
+        where: {
+          OR: [
+            ...(myTaskIds.length > 0 ? [{ subTaskId: { in: myTaskIds } }] : []),
+            ...(myFeatureIds.length > 0 ? [{ initiativeId: { in: myFeatureIds } }] : []),
+          ],
+        },
+        orderBy: { logDate: "asc" },
+        select: {
+          id: true,
+          taskName: true,
+          logDate: true,
+          percentComplete: true,
+          currentPoints: true,
+          totalPoints: true,
+          updateComment: true,
+          completedBy: true,
+          subTaskId: true,
+          initiativeId: true,
+        },
+      })
+    : [];
+
+  // All workstreams for the Add Task feature picker
+  const workstreams = await prisma.workstream.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      deliverables: {
+        orderBy: { sortOrder: "asc" },
+        select: {
+          id: true,
+          name: true,
+          initiatives: {
+            where: { archivedAt: null },
+            orderBy: { sortOrder: "asc" },
+            select: { id: true, name: true },
+          },
+        },
+      },
+      initiatives: {
+        where: { archivedAt: null, deliverableId: null },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true, name: true },
+      },
+    },
+  });
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">My Dashboard</h1>
-        <p className="text-muted-foreground mt-1">
+        <p className="text-sm text-muted-foreground mt-1">
           Tasks and features assigned to{" "}
           <span className="font-semibold text-foreground">{userName}</span>
         </p>
@@ -102,6 +151,8 @@ export default async function MyDashboardPage() {
         tasks={serializeForClient(subTasks) as any}
         features={serializeForClient(initiatives) as any}
         openIssues={serializeForClient(myOpenIssues) as any}
+        progressLogs={serializeForClient(myProgressLogs) as any}
+        workstreams={serializeForClient(workstreams) as any}
       />
     </div>
   );
