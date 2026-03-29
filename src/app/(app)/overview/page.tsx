@@ -76,10 +76,10 @@ export default async function OverviewPage() {
 
   return (
     <OverviewDashboard
-      workstreams={serializeForClient(workstreams)}
-      openIssues={serializeForClient(openIssues)}
-      recentLogs={serializeForClient(recentLogs)}
-      progressLogs={serializeForClient(allProgressLogs)}
+      workstreams={serializeForClient(workstreams) as any}
+      openIssues={serializeForClient(openIssues) as any}
+      recentLogs={serializeForClient(recentLogs) as any}
+      progressLogs={serializeForClient(allProgressLogs) as any}
     />
   );
 }

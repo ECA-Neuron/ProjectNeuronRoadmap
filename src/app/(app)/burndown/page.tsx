@@ -53,8 +53,8 @@ export default async function BurndownPage() {
 
   return (
     <BurndownView
-      workstreams={serializeForClient(workstreams)}
-      progressLogs={serializeForClient(progressLogs)}
+      workstreams={serializeForClient(workstreams) as any}
+      progressLogs={serializeForClient(progressLogs) as any}
     />
   );
 }

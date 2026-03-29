@@ -29,5 +29,5 @@ export default async function AddTaskPage() {
     prisma.person.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
-  return <AddTaskView workstreams={serializeForClient(workstreams)} people={people} />;
+  return <AddTaskView workstreams={serializeForClient(workstreams) as any} people={people} />;
 }

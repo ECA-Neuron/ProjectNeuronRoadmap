@@ -83,9 +83,9 @@ export default async function RoadmapPage() {
         </p>
       </div>
       <RoadmapTabs
-        workstreams={serializeForClient(workstreams)}
-        people={serializeForClient(people)}
-        progressLogs={serializeForClient(progressLogs)}
+        workstreams={serializeForClient(workstreams) as any}
+        people={serializeForClient(people) as any}
+        progressLogs={serializeForClient(progressLogs) as any}
         dependencies={dependencies}
       />
     </div>

@@ -99,9 +99,9 @@ export default async function MyDashboardPage() {
       </div>
       <MyDashboardClient
         userName={userName}
-        tasks={serializeForClient(subTasks)}
-        features={serializeForClient(initiatives)}
-        openIssues={serializeForClient(myOpenIssues)}
+        tasks={serializeForClient(subTasks) as any}
+        features={serializeForClient(initiatives) as any}
+        openIssues={serializeForClient(myOpenIssues) as any}
       />
     </div>
   );

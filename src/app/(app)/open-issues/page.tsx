@@ -155,9 +155,9 @@ export default async function OpenIssuesPage() {
         </div>
       </div>
       <OpenIssuesPageClient
-        workstreams={serializeForClient(workstreams)}
-        issues={serializeForClient(issues)}
-        people={serializeForClient(people)}
+        workstreams={serializeForClient(workstreams) as any}
+        issues={serializeForClient(issues) as any}
+        people={serializeForClient(people) as any}
         currentPersonId={currentPersonId}
       />
     </div>
