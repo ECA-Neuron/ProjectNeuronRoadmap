@@ -193,8 +193,8 @@ export async function pullFromNotion(
         }
       } else {
         const nlvl = notionLevelMap.get(row.notionPageId);
-        const expected = { workstream: "Workstream", deliverable: "Deliverable", initiative: "Feature", subTask: "Task" }[model];
-        if (nlvl && nlvl !== expected && !(model === "deliverable") && !(model === "initiative" && nlvl === "Deliverable")) {
+        const expected: Record<string, string> = { workstream: "Workstream", deliverable: "Deliverable", initiative: "Feature", subTask: "Task" };
+        if (nlvl && nlvl !== expected[model]) {
           shouldDelete = true; // level mismatch
         }
       }
