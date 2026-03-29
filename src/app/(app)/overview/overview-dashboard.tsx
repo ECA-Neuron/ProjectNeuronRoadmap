@@ -259,6 +259,48 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
     return points;
   }, [progressLogs, stats.totalPoints]);
 
+  const overallTrack = useMemo(() => {
+    const remaining = stats.totalPoints - stats.donePoints;
+    if (remaining <= 0) return { status: "done" as const, velocity: 0, estCompletion: null, daysOff: 0 };
+    const rangeStart = "2026-01-01";
+    const rangeEnd = "2026-12-31";
+    const today = new Date().toISOString().slice(0, 10);
+    const elapsed = Math.round((new Date(today + "T12:00:00Z").getTime() - new Date(rangeStart + "T12:00:00Z").getTime()) / 86400000);
+    if (elapsed <= 0) return { status: "no-data" as const, velocity: 0, estCompletion: null, daysOff: 0 };
+    const velocity = stats.donePoints / elapsed;
+    const totalDays = Math.round((new Date(rangeEnd + "T12:00:00Z").getTime() - new Date(rangeStart + "T12:00:00Z").getTime()) / 86400000);
+    const idealBurnPerDay = stats.totalPoints / Math.max(totalDays, 1);
+    const idealBurnt = idealBurnPerDay * Math.min(elapsed, totalDays);
+    let estCompletion: string | null = null;
+    if (velocity > 0) {
+      const daysToFinish = Math.ceil(remaining / velocity);
+      const est = new Date(today + "T12:00:00Z");
+      est.setUTCDate(est.getUTCDate() + daysToFinish);
+      estCompletion = est.toISOString().slice(0, 10);
+    }
+    const daysOff = estCompletion ? Math.round((new Date(estCompletion + "T12:00:00Z").getTime() - new Date(rangeEnd + "T12:00:00Z").getTime()) / 86400000) : 0;
+    const status = stats.donePoints >= idealBurnt * 0.95 ? (stats.donePoints > idealBurnt * 1.1 ? "ahead" as const : "on-track" as const) : "off-track" as const;
+    return { status, velocity, estCompletion, daysOff };
+  }, [stats]);
+
+  const upcomingTasks = useMemo(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return allTasks
+      .filter(t => t.endDate && t.endDate >= today && statusNorm(t.status) !== "DONE")
+      .sort((a, b) => (a.endDate ?? "").localeCompare(b.endDate ?? ""))
+      .slice(0, 5);
+  }, [allTasks]);
+
+  const recentlyCompleted = useMemo(() => {
+    return allTasks
+      .filter(t => statusNorm(t.status) === "DONE")
+      .sort((a, b) => (b.endDate ?? "").localeCompare(a.endDate ?? ""))
+      .slice(0, 5);
+  }, [allTasks]);
+
+  const fmtShort = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const fmtFull = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div>
@@ -297,36 +339,158 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
         </div>
       </div>
 
-      {/* ── Overall Burndown Chart ── */}
-      <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-base font-semibold tracking-tight">Overall Project Burndown</h2>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground tabular-nums">{stats.donePoints} / {stats.totalPoints} pts burned</span>
-            <Link href="/burndown" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">Full burndown →</Link>
+      {/* ── Overall Burndown Chart + Recent Updates ── */}
+      <div className="flex gap-6">
+        <div className="flex-1 min-w-0 bg-card rounded-xl border border-border/60 p-6 shadow-card">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold tracking-tight">Overall Project Burndown</h2>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-muted-foreground tabular-nums">{stats.donePoints} / {stats.totalPoints} pts burned</span>
+              <Link href="/burndown" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">Full burndown →</Link>
+            </div>
           </div>
+
+          {/* Track status badge */}
+          {overallTrack.status !== "no-data" && (
+            <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 px-3.5 py-2.5 rounded-lg text-[11px] border ${
+              overallTrack.status === "off-track" ? "bg-red-50 dark:bg-red-950/20 border-red-200/60 dark:border-red-800/40" :
+              overallTrack.status === "ahead" ? "bg-blue-50 dark:bg-blue-950/20 border-blue-200/60 dark:border-blue-800/40" :
+              overallTrack.status === "done" ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40" :
+              "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200/60 dark:border-emerald-800/40"
+            }`}>
+              <span className={`font-bold ${
+                overallTrack.status === "off-track" ? "text-red-600 dark:text-red-400" :
+                overallTrack.status === "ahead" ? "text-blue-700 dark:text-blue-400" :
+                "text-emerald-700 dark:text-emerald-400"
+              }`}>
+                {overallTrack.status === "off-track" ? "Off Track" : overallTrack.status === "ahead" ? "Ahead" : overallTrack.status === "done" ? "Complete" : "On Track"}
+              </span>
+              {overallTrack.velocity > 0 && (
+                <span className="text-muted-foreground tabular-nums">Velocity: {overallTrack.velocity.toFixed(1)} pts/day</span>
+              )}
+              {overallTrack.estCompletion && overallTrack.status !== "done" && (
+                <span className="text-muted-foreground">Projected completion: <span className="font-semibold text-foreground tabular-nums">{fmtFull(overallTrack.estCompletion)}</span></span>
+              )}
+              {overallTrack.daysOff > 0 && (
+                <span className="text-red-600 dark:text-red-400 font-semibold tabular-nums">{overallTrack.daysOff} days late</span>
+              )}
+              {overallTrack.daysOff < 0 && (
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">{Math.abs(overallTrack.daysOff)} days early</span>
+              )}
+            </div>
+          )}
+
+          <OverviewBurndownChart data={burndownData} />
         </div>
-        <OverviewBurndownChart data={burndownData} />
+
+        {/* Recent Updates sidebar */}
+        {recentLogs.length > 0 && (
+          <div className="w-72 shrink-0 hidden lg:block">
+            <div className="bg-card rounded-xl border border-border/60 p-5 shadow-card sticky top-4 h-full">
+              <h4 className="text-[13px] font-semibold tracking-tight mb-4">Recent Updates</h4>
+              <div className="space-y-3.5">
+                {recentLogs.slice(0, 5).map(log => {
+                  const displayName = log.subTask?.name || log.initiative?.name || cleanTaskName(log.taskName);
+                  return (
+                    <div key={log.id} className="text-xs border-l-2 border-orange-400/60 pl-3">
+                      <span className="font-semibold text-foreground text-[11px] leading-snug block">{displayName}</span>
+                      <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
+                        <span className="tabular-nums">{new Date(log.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                        {log.completedBy && <span>by {log.completedBy}</span>}
+                      </div>
+                      {log.updateComment && (
+                        <p className="text-muted-foreground/70 italic mt-1 leading-snug line-clamp-2 text-[10px]">{log.updateComment}</p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Workstream Breakdown ── */}
       <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
         <h2 className="text-base font-semibold tracking-tight mb-5">Workstream Breakdown</h2>
         <div className="space-y-4">
-          {wsStats.map(ws => (
-            <div key={ws.id} className="flex items-center gap-3 group">
-              <div className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-offset-1 ring-offset-card" style={{ backgroundColor: ws.color || "#6b7280", boxShadow: `0 0 0 0px ${ws.color || "#6b7280"}` }} />
-              <span className="text-[13px] font-medium w-48 truncate" title={ws.name}>{ws.name}</span>
-              <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
-                <div className={`h-full rounded-full transition-all duration-500 ${pctColor(ws.pct)}`} style={{ width: `${ws.pct}%` }} />
+          {wsStats.map(ws => {
+            const effortPct = stats.totalPoints > 0 ? Math.round((ws.totalPts / stats.totalPoints) * 100) : 0;
+            return (
+              <div key={ws.id} className="flex items-center gap-3 group">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-offset-1 ring-offset-card" style={{ backgroundColor: ws.color || "#6b7280" }} />
+                <span className="text-[13px] font-medium w-44 truncate" title={ws.name}>{ws.name}</span>
+                <span className="text-[10px] text-muted-foreground tabular-nums w-14 text-right shrink-0" title="% of total project effort">{effortPct}% effort</span>
+                <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                  <div className={`h-full rounded-full transition-all duration-500 ${pctColor(ws.pct)}`} style={{ width: `${ws.pct}%` }} />
+                </div>
+                <span className="text-xs font-semibold tabular-nums w-10 text-right">{ws.pct}%</span>
+                <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">{ws.done}/{ws.total} tasks</span>
+                {ws.issues > 0 && (
+                  <span className="text-[10px] font-medium bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">{ws.issues} issues</span>
+                )}
               </div>
-              <span className="text-xs font-semibold tabular-nums w-10 text-right">{ws.pct}%</span>
-              <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">{ws.done}/{ws.total} tasks</span>
-              {ws.issues > 0 && (
-                <span className="text-[10px] font-medium bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">{ws.issues} issues</span>
-              )}
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Upcoming & Recently Completed ── */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-4 h-4 text-blue-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 0 1 2.25-2.25h13.5A2.25 2.25 0 0 1 21 7.5v11.25m-18 0A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75m-18 0v-7.5A2.25 2.25 0 0 1 5.25 9h13.5A2.25 2.25 0 0 1 21 11.25v7.5" /></svg>
+            <h2 className="text-base font-semibold tracking-tight">Next 5 Anticipated Releases</h2>
+          </div>
+          {upcomingTasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No upcoming tasks with due dates</p>
+          ) : (
+            <div className="space-y-0">
+              {upcomingTasks.map((t, i) => (
+                <div key={t.id} className="flex items-center gap-3 py-2.5 border-b border-border/40 last:border-0">
+                  <span className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center text-[10px] font-bold shrink-0">{i + 1}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium truncate">{t.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-[10px] text-muted-foreground tabular-nums">Due {fmtShort(t.endDate!)}</span>
+                      {t.assignee && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-medium">{t.assignee.initials || t.assignee.name}</span>}
+                    </div>
+                  </div>
+                  <div className="w-12 text-right">
+                    <span className="text-[11px] font-semibold tabular-nums text-blue-600 dark:text-blue-400">{t.completionPercent}%</span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
+        </div>
+
+        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+          <div className="flex items-center gap-2 mb-4">
+            <svg className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+            <h2 className="text-base font-semibold tracking-tight">Recently Completed</h2>
+          </div>
+          {recentlyCompleted.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">No completed tasks yet</p>
+          ) : (
+            <div className="space-y-0">
+              {recentlyCompleted.map(t => (
+                <div key={t.id} className="flex items-center gap-3 py-2.5 border-b border-border/40 last:border-0">
+                  <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center shrink-0">
+                    <svg className="w-3 h-3 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[13px] font-medium truncate">{t.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {t.endDate && <span className="text-[10px] text-muted-foreground tabular-nums">{fmtShort(t.endDate)}</span>}
+                      {t.assignee && <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded font-medium">{t.assignee.initials || t.assignee.name}</span>}
+                    </div>
+                  </div>
+                  <span className="text-[10px] font-medium bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full shrink-0">{t.points} pts</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 

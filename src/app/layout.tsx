@@ -20,11 +20,10 @@ export default function RootLayout({
       <head>
         <script dangerouslySetInnerHTML={{ __html: `
           try {
-            if (localStorage.getItem('theme') === 'dark' ||
-                (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-              document.documentElement.classList.add('dark');
-            }
-          } catch(e) {}
+            var t = localStorage.getItem('theme');
+            if (t === 'light') { /* stay light */ }
+            else { document.documentElement.classList.add('dark'); }
+          } catch(e) { document.documentElement.classList.add('dark'); }
         ` }} />
       </head>
       <body className={inter.className}>
