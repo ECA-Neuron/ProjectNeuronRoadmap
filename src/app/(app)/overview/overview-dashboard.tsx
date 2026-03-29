@@ -298,8 +298,9 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
       .slice(0, 5);
   }, [allTasks]);
 
-  const fmtShort = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
-  const fmtFull = (d: string) => new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+  const parseDate = (d: string) => d.includes("T") ? new Date(d) : new Date(d + "T12:00:00Z");
+  const fmtShort = (d: string) => parseDate(d).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
+  const fmtFull = (d: string) => parseDate(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -494,76 +495,36 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        {/* ── Open Issues Summary ── */}
-        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold tracking-tight">Open Issues</h2>
-            <Link href="/open-issues" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">View all →</Link>
-          </div>
-          {openIssues.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No open issues</p>
-          ) : (
-            <div className="space-y-0 max-h-80 overflow-y-auto">
-              {openIssues.slice(0, 10).map(issue => (
-                <div key={issue.id} className="flex items-start gap-3 py-2.5 border-b border-border/40 last:border-0">
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${
-                    issue.severity === "STOPPING" ? "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400" :
-                    issue.severity === "SLOWING" ? "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400" :
-                    "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
-                  }`}>
-                    {sevLabel(issue.severity)}
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] truncate font-medium">{issue.title}</p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{issue.workstream.name}</p>
-                  </div>
+      {/* ── Open Issues Summary ── */}
+      <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold tracking-tight">Open Issues</h2>
+          <Link href="/open-issues" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">View all →</Link>
+        </div>
+        {openIssues.length === 0 ? (
+          <p className="text-sm text-muted-foreground py-4 text-center">No open issues</p>
+        ) : (
+          <div className="space-y-0 max-h-80 overflow-y-auto">
+            {openIssues.slice(0, 10).map(issue => (
+              <div key={issue.id} className="flex items-start gap-3 py-2.5 border-b border-border/40 last:border-0">
+                <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${
+                  issue.severity === "STOPPING" ? "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400" :
+                  issue.severity === "SLOWING" ? "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400" :
+                  "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                }`}>
+                  {sevLabel(issue.severity)}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[13px] truncate font-medium">{issue.title}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{issue.workstream.name}</p>
                 </div>
-              ))}
-              {openIssues.length > 10 && (
-                <p className="text-xs text-muted-foreground text-center pt-2">+ {openIssues.length - 10} more</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* ── Recent Activity ── */}
-        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold tracking-tight">Recent Activity</h2>
-            <Link href="/burndown" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">Burndown →</Link>
+              </div>
+            ))}
+            {openIssues.length > 10 && (
+              <p className="text-xs text-muted-foreground text-center pt-2">+ {openIssues.length - 10} more</p>
+            )}
           </div>
-          {recentLogs.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">No progress updates yet</p>
-          ) : (
-            <div className="space-y-0 max-h-80 overflow-y-auto">
-              {recentLogs.map(log => {
-                const displayName = log.subTask?.name || log.initiative?.name || cleanTaskName(log.taskName);
-                const wsName = log.workstream?.name;
-                return (
-                  <div key={log.id} className="py-2.5 border-b border-border/40 last:border-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[13px] font-medium truncate flex-1 mr-3">{displayName}</span>
-                      <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
-                        {new Date(log.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </span>
-                    </div>
-                    {wsName && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5">{wsName}</p>
-                    )}
-                    {log.updateComment && (
-                      <p className="text-xs text-muted-foreground/80 mt-1 truncate italic">{log.updateComment}</p>
-                    )}
-                    <div className="flex gap-3 mt-1 text-[11px] text-muted-foreground">
-                      {log.completedBy && <span>by {log.completedBy}</span>}
-                      {log.percentComplete != null && <span className="font-medium text-blue-600 dark:text-blue-400">{log.percentComplete}%</span>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+        )}
       </div>
 
       {/* ── Overdue Tasks ── */}
