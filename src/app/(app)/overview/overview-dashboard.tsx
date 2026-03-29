@@ -260,13 +260,14 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
   }, [progressLogs, stats.totalPoints]);
 
   const overallTrack = useMemo(() => {
+    type TrackStatus = "done" | "no-data" | "on-track" | "off-track" | "ahead";
     const remaining = stats.totalPoints - stats.donePoints;
-    if (remaining <= 0) return { status: "done" as const, velocity: 0, estCompletion: null, daysOff: 0 };
+    if (remaining <= 0) return { status: "done" as TrackStatus, velocity: 0, estCompletion: null as string | null, daysOff: 0 };
     const rangeStart = "2026-01-01";
     const rangeEnd = "2026-12-31";
     const today = new Date().toISOString().slice(0, 10);
     const elapsed = Math.round((new Date(today + "T12:00:00Z").getTime() - new Date(rangeStart + "T12:00:00Z").getTime()) / 86400000);
-    if (elapsed <= 0) return { status: "no-data" as const, velocity: 0, estCompletion: null, daysOff: 0 };
+    if (elapsed <= 0) return { status: "no-data" as TrackStatus, velocity: 0, estCompletion: null as string | null, daysOff: 0 };
     const velocity = stats.donePoints / elapsed;
     const totalDays = Math.round((new Date(rangeEnd + "T12:00:00Z").getTime() - new Date(rangeStart + "T12:00:00Z").getTime()) / 86400000);
     const idealBurnPerDay = stats.totalPoints / Math.max(totalDays, 1);
