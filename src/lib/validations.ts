@@ -114,7 +114,7 @@ export const programSchema = z.object({
 
 // ─── Open Issue ─────────────────────────────────
 export const openIssueSchema = z.object({
-  workstreamId: z.string().min(1, "Workstream is required"),
+  workstreamId: z.string().optional().nullable(),
   subTaskId: z.string().optional().nullable(),
   title: z.string().min(1, "Title is required"),
   description: z.string().optional().nullable(),

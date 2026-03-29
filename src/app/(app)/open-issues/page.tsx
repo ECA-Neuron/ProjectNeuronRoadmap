@@ -50,7 +50,7 @@ export default async function OpenIssuesPage() {
 
   let issues: Array<{
     id: string;
-    workstreamId: string;
+    workstreamId: string | null;
     subTaskId: string | null;
     title: string;
     description: string | null;
@@ -59,7 +59,7 @@ export default async function OpenIssuesPage() {
     createdAt: Date;
     updatedAt: Date;
     resolvedAt: Date | null;
-    workstream: { id: string; name: string; slug: string };
+    workstream: { id: string; name: string; slug: string } | null;
     subTask: { id: string; name: string; initiative: { id: string; name: string } } | null;
     assignees: Array<{ person: { id: string; name: string; initials: string | null } }>;
     comments: Array<unknown>;

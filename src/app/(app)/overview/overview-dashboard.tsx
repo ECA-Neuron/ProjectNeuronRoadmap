@@ -204,8 +204,6 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
       byDay.set(d, arr);
     }
 
-    const TARGET_TICKS = 8;
-    const tickInterval = Math.max(1, Math.floor(allDays.length / TARGET_TICKS));
     const idealBurnPerDay = totalScope / Math.max(allDays.length - 1, 1);
     let cumBurnt = 0;
 
@@ -221,10 +219,13 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
       const dayLogs = byDay.get(d) ?? [];
       cumBurnt += dayLogs.reduce((s, l) => s + (l.currentPoints ?? 0), 0);
 
-      const showLabel = i === 0 || i === allDays.length - 1 || i % tickInterval === 0;
       const dt = new Date(d + "T12:00:00Z");
+      const isFirst = i === 0;
+      const isLast = i === allDays.length - 1;
+      const isMonthStart = dt.getUTCDate() === 1;
+      const showLabel = isFirst || isLast || isMonthStart;
       const label = showLabel
-        ? dt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+        ? dt.toLocaleDateString("en-US", { month: "short", ...(isFirst || isLast ? { day: "numeric" } : {}), timeZone: "UTC" })
         : "";
 
       const isToday = d <= TODAY;

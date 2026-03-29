@@ -41,7 +41,7 @@ export async function createOpenIssue(data: unknown) {
   const assigneeIds = parsed.assigneeIds ?? [];
   const issue = await prisma.openIssue.create({
     data: {
-      workstreamId: parsed.workstreamId,
+      ...(parsed.workstreamId ? { workstreamId: parsed.workstreamId } : {}),
       subTaskId: parsed.subTaskId || null,
       title: parsed.title,
       description: parsed.description || null,
@@ -353,13 +353,14 @@ export async function countOpenIssuesByWorkstream() {
   // Transform into a map: workstreamId → { total, stopping, slowing, notAConcern }
   const result: Record<string, { total: number; stopping: number; slowing: number; notAConcern: number }> = {};
   for (const row of issues) {
-    if (!result[row.workstreamId]) {
-      result[row.workstreamId] = { total: 0, stopping: 0, slowing: 0, notAConcern: 0 };
+    const wsId = row.workstreamId ?? "__unassigned__";
+    if (!result[wsId]) {
+      result[wsId] = { total: 0, stopping: 0, slowing: 0, notAConcern: 0 };
     }
-    result[row.workstreamId].total += row._count;
-    if (row.severity === "STOPPING") result[row.workstreamId].stopping += row._count;
-    else if (row.severity === "SLOWING") result[row.workstreamId].slowing += row._count;
-    else result[row.workstreamId].notAConcern += row._count;
+    result[wsId].total += row._count;
+    if (row.severity === "STOPPING") result[wsId].stopping += row._count;
+    else if (row.severity === "SLOWING") result[wsId].slowing += row._count;
+    else result[wsId].notAConcern += row._count;
   }
   return result;
 }

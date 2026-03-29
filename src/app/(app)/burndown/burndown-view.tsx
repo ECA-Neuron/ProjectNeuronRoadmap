@@ -105,7 +105,7 @@ function buildBurndown(
     byDay.set(d, arr);
   }
 
-  const TARGET_TICKS = 8;
+  const TARGET_TICKS = 5;
   const tickInterval = Math.max(1, Math.floor(allDays.length / TARGET_TICKS));
   const idealBurnPerDay = totalScope / Math.max(allDays.length - 1, 1);
   let cumBurnt = 0;
@@ -123,10 +123,13 @@ function buildBurndown(
     const dayLogs = byDay.get(d) ?? [];
     cumBurnt += dayLogs.reduce((s, l) => s + l.currentPoints, 0);
 
-    const showLabel = i === 0 || i === allDays.length - 1 || i % tickInterval === 0;
     const dt = new Date(d + "T12:00:00Z");
+    const isFirst = i === 0;
+    const isLast = i === allDays.length - 1;
+    const isMonthStart = dt.getUTCDate() === 1;
+    const showLabel = isFirst || isLast || isMonthStart;
     const label = showLabel
-      ? dt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+      ? dt.toLocaleDateString("en-US", { month: "short", ...(isFirst || isLast ? { day: "numeric" } : {}), timeZone: "UTC" })
       : "";
 
     const isToday = d <= TODAY;
@@ -229,6 +232,22 @@ const TRACK_STYLES: Record<TrackInfo["status"], { bg: string; text: string; labe
   "done":     { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", label: "Complete" },
   "no-data":  { bg: "bg-gray-100 dark:bg-gray-800",     text: "text-gray-500",                      label: "No Data" },
 };
+
+/* ─── Custom dot for progress update highlights ──────── */
+
+function ActualDot(props: any) {
+  const { cx, cy, payload } = props;
+  if (cx == null || cy == null) return null;
+  const hasLogs = payload?.dayLogs && payload.dayLogs.length > 0;
+  if (hasLogs) {
+    return (
+      <g>
+        <circle cx={cx} cy={cy} r={5} fill="#10b981" stroke="#fff" strokeWidth={2} />
+      </g>
+    );
+  }
+  return <circle cx={cx} cy={cy} r={1.5} fill="#f97316" stroke="none" />;
+}
 
 /* ─── Tooltip ────────────────────────────────────────── */
 
@@ -371,8 +390,8 @@ function BurndownChart({ title, subtitle, data, totalPts, burntPts, noDate, onCl
               <YAxis fontSize={10} />
               <Tooltip content={<CustomTooltip />} />
               <Legend />
-              <Line type="linear" dataKey="idealRemaining" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2, fill: "#ffffff", stroke: "#3b82f6", strokeWidth: 1.5 }} activeDot={{ r: 4, fill: "#3b82f6" }} name="Ideal Remaining" />
-              <Line type="monotone" dataKey="actualRemaining" stroke="#f97316" strokeWidth={2} dot={{ r: 2.5, fill: "#ffffff", stroke: "#f97316", strokeWidth: 1.5 }} activeDot={{ r: 5, fill: "#f97316" }} name="Actual Remaining" connectNulls={false} />
+              <Line type="linear" dataKey="idealRemaining" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#3b82f6" }} name="Ideal Remaining" />
+              <Line type="monotone" dataKey="actualRemaining" stroke="#f97316" strokeWidth={2} dot={<ActualDot />} activeDot={{ r: 6, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }} name="Actual Remaining" connectNulls={false} />
               <Line type="linear" dataKey="projectedRemaining" stroke="#f97316" strokeWidth={1.5} strokeDasharray="6 4" dot={false} activeDot={{ r: 3, fill: "#fb923c" }} name="Projected (velocity)" connectNulls={false} />
             </LineChart>
           ) : data.length === 0 ? (

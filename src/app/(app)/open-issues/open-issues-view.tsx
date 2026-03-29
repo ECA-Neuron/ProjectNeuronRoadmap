@@ -50,7 +50,7 @@ interface IssueComment {
 
 interface OpenIssue {
   id: string;
-  workstreamId: string;
+  workstreamId: string | null;
   subTaskId: string | null;
   title: string;
   description: string | null;
@@ -58,7 +58,7 @@ interface OpenIssue {
   screenshotUrl: string | null;
   createdAt: string;
   resolvedAt: string | null;
-  workstream: { id: string; name: string; slug: string };
+  workstream: { id: string; name: string; slug: string } | null;
   subTask: SubTaskRef | null;
   assignees?: { person: PersonRef }[];
   comments: IssueComment[];
@@ -948,7 +948,7 @@ function IssueCard({
             </div>
             <div className="flex gap-3 text-xs text-muted-foreground flex-wrap">
               <span>
-                Workstream: <strong className="text-foreground">{issue.workstream.name}</strong>
+                Workstream: <strong className="text-foreground">{issue.workstream?.name ?? "Unassigned"}</strong>
               </span>
               {issue.subTask && (
                 <span>

@@ -250,7 +250,7 @@ model SubTaskCompletionNote {
 model OpenIssue {
   id              String    @id @default(cuid())
   notionPageId    String?   @unique
-  workstreamId    String
+  workstreamId    String?
   subTaskId       String?   // optional: the subtask this issue blocks
   title           String
   description     String?
@@ -260,8 +260,8 @@ model OpenIssue {
   updatedAt       DateTime  @updatedAt
   resolvedAt      DateTime? // null = open
 
-  workstream      Workstream @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
-  subTask         SubTask?   @relation(fields: [subTaskId], references: [id], onDelete: SetNull)
+  workstream      Workstream? @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
+  subTask         SubTask?    @relation(fields: [subTaskId], references: [id], onDelete: SetNull)
   assignees       OpenIssueAssignee[]
   comments        IssueComment[]
   mentions        IssueMention[]

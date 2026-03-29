@@ -199,7 +199,6 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
         const id = wsLookup.get(relId.replace(/-/g, ""));
         if (id) { workstreamId = id; break; }
       }
-      // If no direct workstream relation, try to infer from related deliverable
       if (!workstreamId) {
         for (const relId of parsed.deliverableRelation) {
           const d = deliverableLookup.get(relId.replace(/-/g, ""));
@@ -207,10 +206,6 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
         }
       }
       if (!workstreamId && defaultWs) workstreamId = defaultWs.id;
-      if (!workstreamId) {
-        errors.push(`No workstream for issue "${parsed.title}"`);
-        continue;
-      }
 
       let subTaskId: string | null = null;
       for (const relId of parsed.taskRelation) {
@@ -229,7 +224,7 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
             title: parsed.title,
             description: parsed.description,
             severity: parsed.severity,
-            workstreamId,
+            workstreamId: workstreamId ?? undefined,
             subTaskId,
             resolvedAt: parsed.resolved ? (existing.resolvedAt ?? new Date()) : null,
           },
@@ -241,7 +236,7 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
             title: parsed.title,
             description: parsed.description,
             severity: parsed.severity,
-            workstreamId,
+            ...(workstreamId ? { workstreamId } : {}),
             subTaskId,
             resolvedAt: parsed.resolved ? new Date() : null,
           },
