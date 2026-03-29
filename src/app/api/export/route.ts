@@ -130,7 +130,7 @@ export async function GET(request: NextRequest) {
       i.id,
       `"${i.title.replace(/"/g, '""')}"`,
       i.severity,
-      `"${i.workstream.name.replace(/"/g, '""')}"`,
+      `"${(i.workstream?.name || "Unassigned").replace(/"/g, '""')}"`,
       `"${(i.subTask?.name || "").replace(/"/g, '""')}"`,
       `"${(i.description || "").replace(/"/g, '""')}"`,
       i.createdAt,
