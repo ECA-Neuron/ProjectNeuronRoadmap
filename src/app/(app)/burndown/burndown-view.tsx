@@ -1,720 +1,974 @@
 "use client";
 
-import { useState, useMemo, useCallback, useTransition } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Select } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { saveMonthlySnapshot } from "@/lib/actions/snapshots";
-import { getCurrentPeriod, getMonthlyPeriods, parseTargetMonth, type BurnPeriod } from "@/lib/burn-periods";
-import { buildTimeline, buildChartData, type ChartPoint as SharedChartPoint, type ProgramRef as SharedProgramRef } from "@/lib/burndown-chart-data";
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
+  LineChart, Line, XAxis, YAxis, CartesianGrid,
+  Tooltip, Legend,
 } from "recharts";
+import { logProgressUpdate } from "@/lib/actions/log-progress-update";
 
-/* ─── Types ───────────────────────────────────────────── */
+/* ─── Types ──────────────────────────────────────────── */
 
 interface SubTask {
-  id: string; name: string; points: number; completionPercent: number; status: string; isAddedScope: boolean;
-  assignedOrganization: "ECLIPSE" | "ACCENTURE" | null;
+  id: string; name: string; points: number; completionPercent: number; status: string;
 }
 interface Initiative {
-  id: string; name: string; description: string | null; category: string;
-  plannedStartMonth: string | null; plannedEndMonth: string | null;
-  status: string; ownerInitials: string | null; totalPoints: number; subTasks: SubTask[];
+  id: string; name: string; status: string; totalPoints: number; subTasks: SubTask[];
+  startDate: string | null; endDate: string | null;
+}
+interface Deliverable {
+  id: string; name: string; initiatives: Initiative[];
+  startDate: string | null; endDate: string | null;
 }
 interface Workstream {
-  id: string; name: string; slug: string; color: string | null; status: string;
-  targetCompletionDate: string | null; programId: string; initiatives: Initiative[];
+  id: string; name: string; color: string | null;
+  startDate: string | null; endDate: string | null;
+  deliverables?: Deliverable[]; initiatives: Initiative[];
 }
-interface SubcomponentSnap { name: string; totalPoints: number; completedPoints: number; }
-interface WsSnapshotEntry {
-  name: string; totalPoints: number; completedPoints: number;
-  subcomponents?: Record<string, SubcomponentSnap>;
-}
-interface BurnSnapshotData {
-  id: string; programId: string; date: string;
-  totalPoints: number; completedPoints: number; percentComplete: number;
-  workstreamData?: Record<string, WsSnapshotEntry> | null;
-}
-interface ProgramRef {
-  id: string; name: string; fyStartYear: number; fyEndYear: number;
-  startDate: string | null; targetDate: string | null;
+interface ProgressLogEntry {
+  id: string; taskName: string; totalPoints: number; currentPoints: number;
+  percentComplete: number; updateComment: string | null; completedBy: string | null;
+  logDate: string | null;
+  workstreamId: string | null; deliverableId: string | null;
+  initiativeId: string | null; subTaskId: string | null;
+  subTask?: { name: string } | null;
+  initiative?: { name: string } | null;
 }
 
-/* ─── Helpers ─────────────────────────────────────────── */
-
-function stCompletedPts(st: SubTask): number {
-  return Math.round(st.points * (st.completionPercent / 100));
+function resolveTaskName(l: ProgressLogEntry): string {
+  if (l.subTask?.name) return l.subTask.name;
+  if (l.initiative?.name) return l.initiative.name;
+  return l.taskName;
 }
 
-function stBasePoints(st: SubTask): number {
-  return st.isAddedScope ? 0 : st.points;
+function allInits(ws: Workstream): Initiative[] {
+  return [...(ws.deliverables ?? []).flatMap(d => d.initiatives), ...ws.initiatives];
 }
 
-function stScopePoints(st: SubTask): number {
-  return st.points;
+function allSubTasks(ws: Workstream): SubTask[] {
+  return allInits(ws).flatMap(i => i.subTasks);
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  NOT_STARTED: "#9ca3af", IN_PROGRESS: "#3b82f6", BLOCKED: "#ef4444", DONE: "#22c55e",
+function toISO(d: string | null): string | null {
+  if (!d) return null;
+  try { return new Date(d).toISOString().slice(0, 10); } catch { return null; }
+}
+
+const TODAY = new Date().toISOString().slice(0, 10);
+
+function daysBetween(a: string, b: string): number {
+  return Math.round((new Date(b + "T12:00:00Z").getTime() - new Date(a + "T12:00:00Z").getTime()) / 86400000);
+}
+
+function fmtDate(d: string): string {
+  return new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+/* ─── Build burndown chart data ──────────────────────── */
+
+interface BurnPoint {
+  date: string;
+  label: string;
+  idealRemaining: number;
+  actualRemaining: number | null;
+  projectedRemaining: number | null;
+  dayLogs: { taskName: string; comment: string | null; by: string | null; pts: number }[];
+}
+
+function buildBurndown(
+  totalScope: number,
+  logs: ProgressLogEntry[],
+  rangeStart: string,
+  rangeEnd: string,
+): BurnPoint[] {
+  if (totalScope === 0) return [];
+
+  const dated = logs
+    .filter(l => l.logDate)
+    .sort((a, b) => String(a.logDate!).localeCompare(String(b.logDate!)));
+
+  const allDays: string[] = [];
+  const cur = new Date(rangeStart + "T12:00:00Z");
+  const end = new Date(rangeEnd + "T12:00:00Z");
+  while (cur <= end) {
+    allDays.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  if (allDays.length === 0) return [];
+
+  const byDay = new Map<string, ProgressLogEntry[]>();
+  for (const l of dated) {
+    const d = new Date(String(l.logDate!)).toISOString().slice(0, 10);
+    const arr = byDay.get(d) ?? [];
+    arr.push(l);
+    byDay.set(d, arr);
+  }
+
+  const TARGET_TICKS = 8;
+  const tickInterval = Math.max(1, Math.floor(allDays.length / TARGET_TICKS));
+  const idealBurnPerDay = totalScope / Math.max(allDays.length - 1, 1);
+  let cumBurnt = 0;
+
+  for (const l of dated) {
+    const d = new Date(String(l.logDate!)).toISOString().slice(0, 10);
+    if (d < rangeStart) cumBurnt += l.currentPoints;
+  }
+
+  // First pass: build actual data up to today to get velocity
+  const points: BurnPoint[] = [];
+  let todayIdx = -1;
+  for (let i = 0; i < allDays.length; i++) {
+    const d = allDays[i];
+    const dayLogs = byDay.get(d) ?? [];
+    cumBurnt += dayLogs.reduce((s, l) => s + l.currentPoints, 0);
+
+    const showLabel = i === 0 || i === allDays.length - 1 || i % tickInterval === 0;
+    const dt = new Date(d + "T12:00:00Z");
+    const label = showLabel
+      ? dt.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" })
+      : "";
+
+    const isToday = d <= TODAY;
+    if (isToday) todayIdx = i;
+
+    points.push({
+      date: d,
+      label,
+      idealRemaining: Math.max(0, Math.round(totalScope - idealBurnPerDay * i)),
+      actualRemaining: isToday ? Math.max(0, totalScope - cumBurnt) : null,
+      projectedRemaining: null,
+      dayLogs: dayLogs.filter(l => l.currentPoints > 0 || l.updateComment).map(l => ({
+        taskName: resolveTaskName(l), comment: l.updateComment, by: l.completedBy, pts: l.currentPoints,
+      })),
+    });
+  }
+
+  // Compute velocity projection from today onwards
+  if (todayIdx >= 0) {
+    const actualAtToday = points[todayIdx].actualRemaining ?? totalScope;
+    const elapsedDays = todayIdx + 1;
+    const burntSoFar = totalScope - actualAtToday;
+    const velocity = elapsedDays > 0 ? burntSoFar / elapsedDays : 0;
+
+    // Set projection on today (anchoring point)
+    points[todayIdx].projectedRemaining = actualAtToday;
+
+    // Project forward from today
+    if (velocity > 0) {
+      for (let i = todayIdx + 1; i < points.length; i++) {
+        const daysPast = i - todayIdx;
+        points[i].projectedRemaining = Math.max(0, Math.round(actualAtToday - velocity * daysPast));
+      }
+    }
+  }
+
+  return points;
+}
+
+/* ─── Track status & velocity projection ─────────────── */
+
+interface TrackInfo {
+  status: "on-track" | "off-track" | "ahead" | "done" | "no-data";
+  velocity: number;
+  estCompletion: string | null;
+  dueDate: string | null;
+  daysOff: number;
+  daysAhead: number;
+}
+
+function computeTrackInfo(
+  totalPts: number,
+  burntPts: number,
+  startDate: string | null,
+  endDate: string | null,
+): TrackInfo {
+  const sd = toISO(startDate);
+  const ed = toISO(endDate);
+  const remaining = totalPts - burntPts;
+
+  if (remaining <= 0) return { status: "done", velocity: 0, estCompletion: null, dueDate: ed, daysOff: 0, daysAhead: 0 };
+  if (!sd || !ed) return { status: "no-data", velocity: 0, estCompletion: null, dueDate: ed, daysOff: 0, daysAhead: 0 };
+
+  const effectiveStart = sd < TODAY ? sd : TODAY;
+  const elapsed = daysBetween(effectiveStart, TODAY);
+  if (elapsed <= 0) return { status: "no-data", velocity: 0, estCompletion: null, dueDate: ed, daysOff: 0, daysAhead: 0 };
+
+  const velocity = burntPts / elapsed;
+  const totalDays = daysBetween(sd, ed);
+  const idealBurnPerDay = totalPts / Math.max(totalDays, 1);
+  const elapsedFromStart = daysBetween(sd, TODAY);
+  const idealBurnt = idealBurnPerDay * Math.min(elapsedFromStart, totalDays);
+
+  let estCompletion: string | null = null;
+  if (velocity > 0) {
+    const daysToFinish = Math.ceil(remaining / velocity);
+    const est = new Date(TODAY + "T12:00:00Z");
+    est.setUTCDate(est.getUTCDate() + daysToFinish);
+    estCompletion = est.toISOString().slice(0, 10);
+  }
+
+  const daysOff = estCompletion ? daysBetween(ed, estCompletion) : 0;
+  const diff = burntPts - idealBurnt;
+  const daysAhead = velocity > 0 ? Math.round(diff / velocity) : 0;
+
+  let status: TrackInfo["status"];
+  if (burntPts >= idealBurnt * 0.95) {
+    status = burntPts > idealBurnt * 1.1 ? "ahead" : "on-track";
+  } else {
+    status = "off-track";
+  }
+
+  return { status, velocity, estCompletion, dueDate: ed, daysOff, daysAhead };
+}
+
+const TRACK_STYLES: Record<TrackInfo["status"], { bg: string; text: string; label: string }> = {
+  "on-track": { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", label: "On Track" },
+  "ahead":    { bg: "bg-blue-100 dark:bg-blue-900/30",  text: "text-blue-700 dark:text-blue-400",  label: "Ahead" },
+  "off-track":{ bg: "bg-red-100 dark:bg-red-900/30",    text: "text-red-700 dark:text-red-400",    label: "Off Track" },
+  "done":     { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", label: "Complete" },
+  "no-data":  { bg: "bg-gray-100 dark:bg-gray-800",     text: "text-gray-500",                      label: "No Data" },
 };
-/* All remaining lines use orange #f97316, purple #a855f7 for scope */
 
-/* ─── Tooltip ─────────────────────────────────────────── */
+/* ─── Tooltip ────────────────────────────────────────── */
 
-function BurndownTooltip({ active, payload, label }: any) {
+function CustomTooltip({ active, payload }: any) {
   if (!active || !payload?.length) return null;
-  const data = payload[0]?.payload;
+  const pt = payload[0]?.payload as BurnPoint | undefined;
+  if (!pt) return null;
   return (
-    <div className="bg-white border rounded-lg shadow-lg p-3 text-sm max-w-xs">
-      <p className="font-semibold mb-1">{label}</p>
-      {payload.map((p: any) => (
-        <div key={p.dataKey} className="flex items-center gap-2">
-          <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: p.stroke }} />
-          <span className="text-muted-foreground truncate">{p.name}:</span>
-          <span className="font-semibold">{p.value !== null && p.value !== undefined ? `${p.value} pts` : "—"}</span>
+    <div className="bg-card border border-border rounded-lg shadow-lg p-3 max-w-[320px] text-xs z-50">
+      <p className="font-semibold text-sm mb-1">
+        {pt.date ? fmtDate(pt.date) : ""}
+      </p>
+      <div className="flex gap-4 mb-1">
+        <span className="text-blue-600">Ideal: {pt.idealRemaining.toFixed(0)} pts</span>
+        {pt.actualRemaining !== null && <span className="text-orange-600">Actual: {pt.actualRemaining.toFixed(0)} pts</span>}
+        {pt.projectedRemaining !== null && pt.actualRemaining === null && <span className="text-orange-400">Projected: {pt.projectedRemaining.toFixed(0)} pts</span>}
+      </div>
+      {pt.dayLogs.length > 0 && (
+        <div className="border-t pt-1.5 mt-1 space-y-1 max-h-[200px] overflow-y-auto">
+          {pt.dayLogs.map((l, i) => (
+            <div key={i} className="text-muted-foreground">
+              <span className="font-medium text-foreground">{l.taskName}</span>
+              {l.pts > 0 && <span className="text-green-600 ml-1">+{l.pts.toFixed(1)} pts</span>}
+              {l.by && <span className="ml-1">by {l.by}</span>}
+              {l.comment && <p className="text-[10px] mt-0.5 italic leading-tight line-clamp-2">{l.comment}</p>}
+            </div>
+          ))}
         </div>
-      ))}
-      {data?.isCurrent && <p className="text-[10px] text-orange-500 mt-1 border-t pt-1">Current month</p>}
-      {data?.scopeChanged && <Badge variant="destructive" className="text-[9px] mt-1">Scope Changed</Badge>}
+      )}
     </div>
   );
 }
 
-/* ─── Timeline: use shared buildTimeline; narrow to initiative window for subcharts ───────────────────────────── */
+/* ─── Chart component ────────────────────────────────── */
 
-/** Narrow a global period timeline down to an initiative's planned start/end window. */
-function slicePeriodsForInitiative(all: BurnPeriod[], init: Initiative): BurnPeriod[] {
-  if (all.length === 0) return all;
-
-  let startIdx = 0;
-  let endIdx = all.length - 1;
-
-  if (init.plannedStartMonth) {
-    const key = init.plannedStartMonth;
-    const idx = all.findIndex(p => p.dateKey >= key);
-    if (idx >= 0) startIdx = idx;
-  }
-  if (init.plannedEndMonth) {
-    const key = init.plannedEndMonth;
-    let idx = -1;
-    for (let i = all.length - 1; i >= 0; i--) {
-      if (all[i].dateKey <= key) { idx = i; break; }
-    }
-    if (idx >= 0) endIdx = idx;
-  }
-
-  if (startIdx > endIdx) return all;
-  return all.slice(startIdx, endIdx + 1);
-}
-
-type ChartPoint = SharedChartPoint;
-
-/* ─── Main Component ──────────────────────────────────── */
-
-export default function BurndownView({
-  programs, workstreams, snapshots,
-}: {
-  programs: ProgramRef[]; workstreams: Workstream[]; snapshots: BurnSnapshotData[];
+function BurndownChart({ title, subtitle, data, totalPts, burntPts, noDate, onClick, extra, track }: {
+  title: string; subtitle?: string; data: BurnPoint[];
+  totalPts: number; burntPts: number; noDate?: boolean;
+  onClick?: () => void; extra?: React.ReactNode;
+  track?: TrackInfo;
 }) {
-  const [selectedWs, setSelectedWs] = useState<string>("all");
-  const [selectedProgram, setSelectedProgram] = useState<string>(programs[0]?.id || "all");
-  const [orgFilter, setOrgFilter] = useState<"all" | "ECLIPSE" | "ACCENTURE">("all");
-  const [hideIdeal, setHideIdeal] = useState(false);
-  const [isPending, startTransition] = useTransition();
-  const router = useRouter();
-  const currentPeriod = useMemo(() => getCurrentPeriod(), []);
+  const pct = totalPts > 0 ? Math.round((burntPts / totalPts) * 100) : 0;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [chartWidth, setChartWidth] = useState(0);
 
-  /** Subtask matches the assigned-organization filter */
-  const matchesSubTaskOrg = useCallback((st: SubTask): boolean => {
-    if (orgFilter === "all") return true;
-    return (st.assignedOrganization ?? null) === orgFilter;
-  }, [orgFilter]);
+  useEffect(() => {
+    const measure = () => {
+      if (containerRef.current) setChartWidth(containerRef.current.offsetWidth);
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
 
-  /** Initiative has at least one subtask matching the org filter (for including in snapshot and display) */
-  const initiativeHasMatchingSubTasks = useMemo(() => {
-    const set = new Set<string>();
-    for (const ws of workstreams) {
-      for (const init of ws.initiatives) {
-        const hasMatch = init.subTasks.some(st => matchesSubTaskOrg(st));
-        if (hasMatch) set.add(init.id);
-      }
-    }
-    return set;
-  }, [workstreams, matchesSubTaskOrg]);
-
-  const activeProgram = programs.find(p => p.id === selectedProgram) || programs[0];
-  const allPeriods = useMemo(
-    () => (activeProgram ? buildTimeline(activeProgram as unknown as SharedProgramRef, workstreams) : []),
-    [activeProgram, workstreams]
-  );
-
-  function refresh() { startTransition(() => router.refresh()); }
-
-  /* ── Live totals (baseline vs added-scope) — only subtasks matching org filter ── */
-  let programBasePts = 0;
-  let programScopePts = 0;
-  let programCompletedPts = 0;
-  for (const ws of workstreams) {
-    for (const init of ws.initiatives) {
-      for (const t of init.subTasks) {
-        if (!matchesSubTaskOrg(t)) continue;
-        programBasePts += stBasePoints(t);
-        programScopePts += stScopePoints(t);
-        programCompletedPts += stCompletedPts(t);
-      }
-    }
-  }
-  const programPct = programScopePts > 0 ? Math.round((programCompletedPts / programScopePts) * 100) : 0;
-
-  const wsLiveTotals = useMemo(() => {
-    const map = new Map<string, { name: string; color: string; basePoints: number; scopePoints: number; completedPoints: number }>();
-    for (const ws of workstreams) {
-      let basePts = 0, scopePts = 0, completed = 0;
-      for (const i of ws.initiatives) {
-        for (const t of i.subTasks) {
-          if (!matchesSubTaskOrg(t)) continue;
-          basePts += stBasePoints(t);
-          scopePts += stScopePoints(t);
-          completed += stCompletedPts(t);
-        }
-      }
-      map.set(ws.id, { name: ws.name, color: ws.color || "#888", basePoints: basePts, scopePoints: scopePts, completedPoints: completed });
-    }
-    return map;
-  }, [workstreams, matchesSubTaskOrg]);
-
-  const initLiveTotals = useMemo(() => {
-    const map = new Map<string, { name: string; wsId: string; basePoints: number; scopePoints: number; completedPoints: number }>();
-    for (const ws of workstreams) {
-      for (const init of ws.initiatives) {
-        let basePts = 0, scopePts = 0, completed = 0;
-        for (const t of init.subTasks) {
-          if (!matchesSubTaskOrg(t)) continue;
-          basePts += stBasePoints(t);
-          scopePts += stScopePoints(t);
-          completed += stCompletedPts(t);
-        }
-        if (basePts > 0 || scopePts > 0 || completed > 0) {
-          map.set(init.id, { name: init.name, wsId: ws.id, basePoints: basePts, scopePoints: scopePts, completedPoints: completed });
-        }
-      }
-    }
-    return map;
-  }, [workstreams, matchesSubTaskOrg]);
-
-  const filteredWs = useMemo(() => selectedWs === "all" ? workstreams : workstreams.filter(ws => ws.id === selectedWs), [selectedWs, workstreams]);
-
-  /* ── Overall chart data ── */
-  const chartData = useMemo(() => {
-    const programFilter = selectedProgram !== "all" ? selectedProgram : null;
-    const relevant = programFilter ? snapshots.filter(s => s.programId === programFilter) : snapshots;
-    const byDate = new Map<string, { totalPoints: number; completedPoints: number }>();
-    for (const snap of relevant) {
-      if (snap.workstreamData) {
-        const wsEntries = snap.workstreamData as Record<string, WsSnapshotEntry>;
-        let total = 0;
-        let completed = 0;
-        for (const wsId of Object.keys(wsEntries)) {
-          const entry = wsEntries[wsId];
-          if (entry.subcomponents) {
-            for (const [initId, sub] of Object.entries(entry.subcomponents)) {
-              if (orgFilter !== "all" && !initiativeHasMatchingSubTasks.has(initId)) continue;
-              total += sub.totalPoints;
-              completed += sub.completedPoints;
-            }
-          } else if (orgFilter === "all") {
-            total += entry.totalPoints;
-            completed += entry.completedPoints;
-          }
-        }
-        const existing = byDate.get(snap.date) || { totalPoints: 0, completedPoints: 0 };
-        existing.totalPoints += total;
-        existing.completedPoints += completed;
-        byDate.set(snap.date, existing);
-      } else if (orgFilter === "all") {
-        const e = byDate.get(snap.date) || { totalPoints: 0, completedPoints: 0 };
-        e.totalPoints += snap.totalPoints; e.completedPoints += snap.completedPoints;
-        byDate.set(snap.date, e);
-      }
-    }
-    return buildChartData(
-      allPeriods,
-      byDate,
-      programBasePts,
-      programScopePts - programCompletedPts,
-      programScopePts,
-      currentPeriod,
-    );
-  }, [snapshots, selectedProgram, allPeriods, currentPeriod, programBasePts, programScopePts, programCompletedPts, orgFilter, initiativeHasMatchingSubTasks]);
-
-  /* ── Per-workstream chart data (each uses its own timeline) ── */
-  const wsChartDataMap = useMemo(() => {
-    const map = new Map<string, { name: string; color: string; data: ChartPoint[]; periods: BurnPeriod[] }>();
-    if (!activeProgram) return map;
-    for (const ws of workstreams) {
-      const live = wsLiveTotals.get(ws.id)!;
-
-      // Workstream-specific timeline: use initiative planned start/end from roadmap, or workstream target date, so each chart reflects workstream/roadmap dates
-      const firstPeriod = allPeriods[0];
-      const lastPeriod = allPeriods[allPeriods.length - 1];
-      let wsStartYear = firstPeriod?.year ?? new Date().getFullYear();
-      let wsStartMonth = firstPeriod?.month ?? 1;
-      let wsEndYear = lastPeriod?.year ?? new Date().getFullYear();
-      let wsEndMonth = lastPeriod?.month ?? 12;
-      let hasStart = false;
-      let hasEnd = false;
-      for (const init of ws.initiatives) {
-        if (orgFilter !== "all" && !initiativeHasMatchingSubTasks.has(init.id)) continue;
-        if (init.plannedStartMonth) {
-          const [sy, sm] = init.plannedStartMonth.split("-").map(Number);
-          if (!hasStart || sy < wsStartYear || (sy === wsStartYear && sm < wsStartMonth)) {
-            wsStartYear = sy;
-            wsStartMonth = sm;
-          }
-          hasStart = true;
-        }
-        if (init.plannedEndMonth) {
-          const [ey, em] = init.plannedEndMonth.split("-").map(Number);
-          if (!hasEnd || ey > wsEndYear || (ey === wsEndYear && em > wsEndMonth)) {
-            wsEndYear = ey;
-            wsEndMonth = em;
-          }
-          hasEnd = true;
-        }
-      }
-      // If no initiative end dates, use workstream target completion date (from workstreams page)
-      if (!hasEnd && ws.targetCompletionDate) {
-        const parsed = parseTargetMonth(ws.targetCompletionDate);
-        if (parsed) {
-          wsEndYear = parsed.year;
-          wsEndMonth = parsed.month;
-          hasEnd = true;
-        }
-      }
-      // If no initiative start dates, keep program start (firstPeriod); ensure we have a valid range
-      const wsPeriods = (hasStart || hasEnd || ws.targetCompletionDate) && wsStartYear && wsStartMonth && wsEndYear && wsEndMonth && (wsStartYear < wsEndYear || (wsStartYear === wsEndYear && wsStartMonth <= wsEndMonth))
-        ? getMonthlyPeriods(wsStartYear, wsStartMonth, wsEndYear, wsEndMonth)
-        : allPeriods;
-
-      const byDate = new Map<string, { totalPoints: number; completedPoints: number }>();
-      for (const snap of snapshots) {
-        if (!snap.workstreamData) continue;
-        const wsEntry = (snap.workstreamData as Record<string, WsSnapshotEntry>)[ws.id];
-        if (!wsEntry) continue;
-        let total = 0;
-        let completed = 0;
-        if (wsEntry.subcomponents) {
-          for (const [initId, sub] of Object.entries(wsEntry.subcomponents)) {
-            if (orgFilter !== "all" && !initiativeHasMatchingSubTasks.has(initId)) continue;
-            total += sub.totalPoints;
-            completed += sub.completedPoints;
-          }
-        } else if (orgFilter === "all") {
-          total = wsEntry.totalPoints;
-          completed = wsEntry.completedPoints;
-        }
-        byDate.set(snap.date, { totalPoints: total, completedPoints: completed });
-      }
-      map.set(ws.id, {
-        name: ws.name,
-        color: live.color,
-        periods: wsPeriods,
-        data: buildChartData(
-          wsPeriods,
-          byDate,
-          live.basePoints,
-          live.scopePoints - live.completedPoints,
-          live.scopePoints,
-          currentPeriod,
-        ),
-      });
-    }
-    return map;
-  }, [workstreams, wsLiveTotals, snapshots, allPeriods, currentPeriod, orgFilter, initiativeHasMatchingSubTasks, activeProgram]);
-
-  /* ── Per-subcomponent chart data (each uses its own timeline) ── */
-  const subChartDataMap = useMemo(() => {
-    if (selectedWs === "all") return new Map<string, { name: string; data: ChartPoint[] }>();
-    const map = new Map<string, { name: string; data: ChartPoint[] }>();
-    const ws = workstreams.find(w => w.id === selectedWs);
-    if (!ws || !activeProgram) return map;
-
-    for (const init of ws.initiatives) {
-      const live = initLiveTotals.get(init.id);
-      if (!live) continue;
-      const periods = slicePeriodsForInitiative(allPeriods, init);
-      const byDate = new Map<string, { totalPoints: number; completedPoints: number }>();
-      for (const snap of snapshots) {
-        if (snap.workstreamData) {
-          const wsEntry = (snap.workstreamData as Record<string, WsSnapshotEntry>)[ws.id];
-          const sub = wsEntry?.subcomponents?.[init.id];
-          if (sub) byDate.set(snap.date, { totalPoints: sub.totalPoints, completedPoints: sub.completedPoints });
-        }
-      }
-      map.set(init.id, {
-        name: init.name,
-        data: buildChartData(
-          periods,
-          byDate,
-          live.basePoints,
-          live.scopePoints - live.completedPoints,
-          live.scopePoints,
-          currentPeriod,
-        ),
-      });
-    }
-    return map;
-  }, [selectedWs, workstreams, initLiveTotals, snapshots, activeProgram, currentPeriod, allPeriods]);
-
-  /* ── Handlers ── */
-  function handlePushSnapshot() {
-    const pid = selectedProgram !== "all" ? selectedProgram : programs[0]?.id;
-    if (!pid) return;
-    startTransition(async () => { await saveMonthlySnapshot(pid); refresh(); });
-  }
-
-  const currentPeriodSaved = snapshots.some(s => s.date === currentPeriod.dateKey);
-  const lastSnapshotDate = snapshots.length > 0 ? snapshots[snapshots.length - 1]?.date : null;
-
-  /** Format a snapshot date for "Last updated" (reflects when Update burndown was pressed). */
-  function formatSnapshotDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-  }
-  /** Latest snapshot date that has data for overall program (updates when Update burndown is pressed). */
-  const overallLastUpdated = useMemo(() => {
-    if (snapshots.length === 0) return null;
-    const latest = snapshots.reduce((best, s) => (s.date > (best?.date ?? "") ? s : best), snapshots[0]);
-    return formatSnapshotDate(latest.date);
-  }, [snapshots]);
-  /** Per-workstream: latest snapshot date that has workstreamData for that ws — only charts that have snapshot data show updated. */
-  const wsLastUpdatedMap = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const ws of workstreams) {
-      let latestDate: string | null = null;
-      for (const snap of snapshots) {
-        if (snap.workstreamData && (snap.workstreamData as Record<string, WsSnapshotEntry>)[ws.id]) {
-          if (!latestDate || snap.date > latestDate) latestDate = snap.date;
-        }
-      }
-      if (latestDate) map.set(ws.id, formatSnapshotDate(latestDate));
-    }
-    return map;
-  }, [workstreams, snapshots]);
-  /** Per-init: latest snapshot date that has subcomponent data for that init (when a specific ws is selected). */
-  const initLastUpdatedMap = useMemo(() => {
-    const map = new Map<string, string>();
-    const ws = workstreams.find(w => w.id === selectedWs);
-    if (!ws || selectedWs === "all") return map;
-    for (const init of ws.initiatives) {
-      let latestDate: string | null = null;
-      for (const snap of snapshots) {
-        if (snap.workstreamData) {
-          const wsEntry = (snap.workstreamData as Record<string, WsSnapshotEntry>)[ws.id];
-          const sub = wsEntry?.subcomponents?.[init.id];
-          if (sub && (!latestDate || snap.date > latestDate)) latestDate = snap.date;
-        }
-      }
-      if (latestDate) map.set(init.id, formatSnapshotDate(latestDate));
-    }
-    return map;
-  }, [workstreams, selectedWs, snapshots]);
-
-  /* ── Render helpers ── */
-  function renderChart(data: ChartPoint[], height: number) {
-    return (
-      <ResponsiveContainer width="100%" height={height}>
-        <LineChart data={data} margin={{ top: 15, right: 20, left: 10, bottom: 25 }}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="label" tick={{ fontSize: 9 }} interval={0} angle={-45} textAnchor="end" height={60} />
-          <YAxis tick={{ fontSize: 11 }} width={40} />
-          <Tooltip content={<BurndownTooltip />} />
-          <Legend />
-          {data.some(d => d.isCurrent) && (
-            <ReferenceLine x={data.find(d => d.isCurrent)?.label} stroke="#f97316" strokeDasharray="4 4" label={{ value: "Now", position: "top", fontSize: 10, fill: "#f97316" }} />
-          )}
-          {/* Purple scope line — declines like ideal but steeper when scope grows */}
-          <Line type="monotone" dataKey="scopeLine" stroke="#a855f7" strokeWidth={2} dot={{ r: 2, fill: "#a855f7", strokeWidth: 0 }} name="Scope Adjusted" />
-          {/* Blue ideal line — linear decline */}
-          {!hideIdeal && (
-            <Line type="monotone" dataKey="ideal" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2, fill: "#3b82f6", strokeWidth: 0 }} name="Ideal" strokeDasharray="5 5" />
-          )}
-          {/* Orange remaining line — always orange, connects across gaps */}
-          <Line type="monotone" dataKey="remaining" stroke="#f97316" strokeWidth={3} dot={(props: any) => {
-            const { cx, cy, payload } = props;
-            if (payload?.remaining === null || payload?.remaining === undefined) return <g />;
-            if (payload?.isCurrent && !currentPeriodSaved) return <circle cx={cx} cy={cy} r={5} fill="#f97316" stroke="#fff" strokeWidth={2} />;
-            return <circle cx={cx} cy={cy} r={3} fill="#f97316" />;
-          }} name="Remaining" connectNulls />
-        </LineChart>
-      </ResponsiveContainer>
-    );
-  }
+  const style = track ? TRACK_STYLES[track.status] : null;
 
   return (
-    <div className="space-y-6">
-      {/* ── Header ── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Burndown</h1>
-          <p className="text-muted-foreground mt-1">
-            Monthly snapshots — current: <strong>{currentPeriod.label}</strong>
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="font-semibold">Assigned organization:</span>
-            <select
-              className="h-7 text-xs border rounded px-1 bg-background"
-              value={orgFilter}
-              onChange={(e) => setOrgFilter(e.target.value as "all" | "ECLIPSE" | "ACCENTURE")}
-            >
-              <option value="all">All</option>
-              <option value="ECLIPSE">Eclipse</option>
-              <option value="ACCENTURE">Accenture</option>
-            </select>
+    <div
+      className={`rounded-lg border border-border p-5 min-w-0 overflow-hidden ${onClick ? "cursor-pointer hover:border-blue-400 hover:shadow-md transition-all" : ""}`}
+      onClick={onClick}
+    >
+      <div className="mb-3">
+        <div className="flex items-start justify-between gap-3">
+          <h3 className="font-semibold text-base">{title}</h3>
+          <div className="text-right shrink-0">
+            <span className="text-2xl font-bold text-blue-600">{pct}%</span>
+            <p className="text-xs text-muted-foreground">{burntPts.toFixed(0)} / {totalPts.toFixed(0)} pts</p>
           </div>
-          {currentPeriodSaved && <Badge variant="secondary" className="text-[10px]">Month saved</Badge>}
-          <Button onClick={handlePushSnapshot} disabled={isPending} size="sm">
-            {currentPeriodSaved ? "Update This Month" : "Save This Month"}
-          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
+          {onClick && <span className="text-xs text-blue-500">Click to drill in →</span>}
         </div>
       </div>
 
-      {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-        <Card><CardContent className="pt-6 text-center"><p className="text-xs text-muted-foreground">Total Points</p><p className="text-3xl font-bold">{programScopePts}</p></CardContent></Card>
-        <Card><CardContent className="pt-6 text-center"><p className="text-xs text-muted-foreground">Completed</p><p className="text-3xl font-bold text-green-600">{programCompletedPts}</p></CardContent></Card>
-        <Card><CardContent className="pt-6 text-center"><p className="text-xs text-muted-foreground">Remaining</p><p className="text-3xl font-bold text-orange-500">{programScopePts - programCompletedPts}</p></CardContent></Card>
-        <Card><CardContent className="pt-6 text-center"><p className="text-xs text-muted-foreground">Snapshots</p><p className="text-3xl font-bold text-purple-600">{snapshots.length}</p>{lastSnapshotDate && <p className="text-[10px] text-muted-foreground mt-0.5">Last: {lastSnapshotDate}</p>}</CardContent></Card>
-        <Card><CardContent className="pt-6 text-center"><p className="text-xs text-muted-foreground">Overall</p><p className="text-3xl font-bold">{programPct}%</p><div className="mt-2 w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-green-500" style={{ width: `${programPct}%` }} /></div></CardContent></Card>
-      </div>
-
-      {/* ── Filters ── */}
-      <div className="flex gap-3 items-center flex-wrap">
-        {programs.length > 1 && (
-          <div>
-            <label className="text-xs font-semibold text-muted-foreground block mb-1">Initiative</label>
-            <Select className="h-9 text-sm w-52" value={selectedProgram} onChange={(e) => setSelectedProgram(e.target.value)}>
-              <option value="all">All Initiatives</option>
-              {programs.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </Select>
-          </div>
-        )}
-        <div>
-          <label className="text-xs font-semibold text-muted-foreground block mb-1">Workstream</label>
-          <Select className="h-9 text-sm w-52" value={selectedWs} onChange={(e) => setSelectedWs(e.target.value)}>
-            <option value="all">All Workstreams</option>
-            {workstreams.map(ws => <option key={ws.id} value={ws.id}>{ws.name}</option>)}
-          </Select>
-        </div>
-        <div className="flex items-end pb-0.5">
-          <Button variant={hideIdeal ? "default" : "outline"} size="sm" className="text-xs h-9" onClick={() => setHideIdeal(!hideIdeal)}>
-            {hideIdeal ? "Show" : "Hide"} Ideal
-          </Button>
-        </div>
-        {selectedWs !== "all" && (
-          <Badge variant="outline" className="text-xs mt-5">Showing subcomponent burndowns for selected workstream</Badge>
-        )}
-      </div>
-
-      {/* ── Main Burndown (overall when "all", or selected workstream's chart) ── */}
-      {(() => {
-        if (selectedWs === "all") {
-          // Show overall burndown as the big chart
-          return (
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <CardTitle>Overall Burndown</CardTitle>
-                  <span className="text-xs text-muted-foreground">Last updated: {overallLastUpdated ?? "—"}</span>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Purple = scope-adjusted ideal · Blue = original ideal · Orange = actual remaining · * = current (unsaved)
-                </p>
-              </CardHeader>
-              <CardContent>
-                {chartData.length >= 1 ? renderChart(chartData, 380) : (
-                  <div className="py-16 text-center">
-                    <p className="text-muted-foreground mb-4">No snapshots yet. Save progress for {currentPeriod.label}.</p>
-                    <Button onClick={handlePushSnapshot} disabled={isPending}>Save This Month</Button>
-                  </div>
-                )}
-                {chartData.some(d => d.scopeChanged) && (
-                  <div className="mt-3 p-3 rounded-lg border border-amber-300 bg-amber-50">
-                    <p className="text-sm text-amber-700 font-medium">Scope Changed</p>
-                    <p className="text-xs text-amber-600">Total points changed between consecutive snapshots.</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        } else {
-          // Show the selected workstream as the big chart
-          const ws = workstreams.find(w => w.id === selectedWs);
-          const wsChart = ws ? wsChartDataMap.get(ws.id) : null;
-          const live = ws ? wsLiveTotals.get(ws.id) : null;
-          if (!ws || !wsChart || !live) return null;
-          const pct = live.scopePoints > 0 ? Math.round((live.completedPoints / live.scopePoints) * 100) : 0;
-          return (
-            <Card>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: wsChart.color }} />
-                    <CardTitle>{wsChart.name} — Burndown</CardTitle>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Last updated: {wsLastUpdatedMap.get(ws.id) ?? "—"}</span>
-                    <span className="font-mono text-muted-foreground">{live.completedPoints}/{live.scopePoints} pts</span>
-                    <Badge variant="secondary" className="text-[10px]">{pct}%</Badge>
-                  </div>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Purple = scope-adjusted ideal · Blue = original ideal · Orange = actual remaining · * = current (unsaved)
-                </p>
-              </CardHeader>
-              <CardContent>
-                {live.scopePoints > 0 ? renderChart(wsChart.data, 380) : (
-                  <div className="py-16 text-center text-xs text-muted-foreground">No subtask points yet</div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        }
-      })()}
-
-      {/* ── Workstream Burndowns (only when "all" is selected) ── */}
-      {selectedWs === "all" && (
-        <div>
-          <h2 className="text-xl font-bold mb-4">Workstream Burndowns</h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {workstreams.map((ws) => {
-              const wsChart = wsChartDataMap.get(ws.id);
-              if (!wsChart) return null;
-              const live = wsLiveTotals.get(ws.id)!;
-              if (orgFilter !== "all" && live.scopePoints === 0) return null;
-              const pct = live.scopePoints > 0 ? Math.round((live.completedPoints / live.scopePoints) * 100) : 0;
-              return (
-                <Card key={ws.id}>
-                  <CardHeader className="pb-2">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: wsChart.color }} />
-                        <CardTitle className="text-sm">{wsChart.name}</CardTitle>
-                      </div>
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-muted-foreground">Last updated: {wsLastUpdatedMap.get(ws.id) ?? "—"}</span>
-                        <span className="font-mono text-muted-foreground">{live.completedPoints}/{live.scopePoints} pts</span>
-                        <Badge variant="secondary" className="text-[10px]">{pct}%</Badge>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    {live.scopePoints > 0 ? renderChart(wsChart.data, 240) : (
-                      <div className="py-8 text-center text-xs text-muted-foreground">No subtask points yet</div>
-                    )}
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+      {/* Track status badge + velocity info */}
+      {style && track && track.status !== "no-data" && (
+        <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 px-3 py-2 rounded-md text-xs ${style.bg}`}>
+          <span className={`font-bold ${style.text}`}>{style.label}</span>
+          {track.dueDate && (
+            <span className="text-muted-foreground">
+              Due: <span className="font-semibold text-foreground">{fmtDate(track.dueDate)}</span>
+            </span>
+          )}
+          {track.velocity > 0 && (
+            <span className="text-muted-foreground">
+              Velocity: {track.velocity.toFixed(1)} pts/day
+            </span>
+          )}
+          {track.estCompletion && track.status !== "done" && (
+            <span className="text-muted-foreground">
+              Projected completion: <span className="font-semibold text-foreground">{fmtDate(track.estCompletion)}</span>
+            </span>
+          )}
+          {track.status === "off-track" && track.daysOff > 0 && (
+            <span className="text-red-600 font-semibold">
+              {track.daysOff} days late
+            </span>
+          )}
+          {track.status === "ahead" && track.daysOff < 0 && (
+            <span className="text-blue-600 font-semibold">
+              {Math.abs(track.daysOff)} days early
+            </span>
+          )}
+          {track.status === "on-track" && track.daysOff > 0 && (
+            <span className="text-orange-600 font-semibold">
+              {track.daysOff} days late
+            </span>
+          )}
+          {track.status === "on-track" && track.daysOff < 0 && (
+            <span className="text-green-600 font-semibold">
+              {Math.abs(track.daysOff)} days early
+            </span>
+          )}
         </div>
       )}
 
-      {/* ── Subcomponent Burndowns (only when a specific workstream is selected) ── */}
-      {selectedWs !== "all" && (() => {
-        const ws = workstreams.find(w => w.id === selectedWs);
-        if (!ws || ws.initiatives.length === 0) return null;
-        return (
-          <div>
-            <h2 className="text-xl font-bold mb-4">Subcomponent Burndowns — {ws.name}</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {ws.initiatives.map((init) => {
-                const subChart = subChartDataMap.get(init.id);
-                const subLive = initLiveTotals.get(init.id);
-                if (!subChart || !subLive || subLive.scopePoints === 0) return null;
-                const subPct = subLive.scopePoints > 0 ? Math.round((subLive.completedPoints / subLive.scopePoints) * 100) : 0;
-                return (
-                  <Card key={init.id} className="border-dashed">
-                    <CardHeader className="pb-1 pt-3 px-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <div className="w-2 h-2 rounded-full bg-orange-500" />
-                          <span className="text-xs font-semibold truncate max-w-[160px]" title={subChart.name}>{subChart.name}</span>
+      <div className="w-full h-2 bg-gray-200 rounded-full mb-4">
+        <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+
+      {noDate ? (
+        <div className="py-12 text-center text-muted-foreground text-sm">No date set in Notion for this item.</div>
+      ) : (
+        <div ref={containerRef}>
+          {data.length > 0 && chartWidth > 0 ? (
+            <LineChart width={chartWidth} height={300} data={data}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis
+                dataKey="label"
+                fontSize={9}
+                interval={0}
+                height={45}
+                tick={({ x, y, payload }: any) =>
+                  payload.value
+                    ? <text x={x} y={y + 10} textAnchor="end" fontSize={9} fill="#666" transform={`rotate(-35, ${x}, ${y + 10})`}>{payload.value}</text>
+                    : <g />
+                }
+              />
+              <YAxis fontSize={10} />
+              <Tooltip content={<CustomTooltip />} />
+              <Legend />
+              <Line type="linear" dataKey="idealRemaining" stroke="#3b82f6" strokeWidth={2} dot={{ r: 2, fill: "#ffffff", stroke: "#3b82f6", strokeWidth: 1.5 }} activeDot={{ r: 4, fill: "#3b82f6" }} name="Ideal Remaining" />
+              <Line type="monotone" dataKey="actualRemaining" stroke="#f97316" strokeWidth={2} dot={{ r: 2.5, fill: "#ffffff", stroke: "#f97316", strokeWidth: 1.5 }} activeDot={{ r: 5, fill: "#f97316" }} name="Actual Remaining" connectNulls={false} />
+              <Line type="linear" dataKey="projectedRemaining" stroke="#f97316" strokeWidth={1.5} strokeDasharray="6 4" dot={false} activeDot={{ r: 3, fill: "#fb923c" }} name="Projected (velocity)" connectNulls={false} />
+            </LineChart>
+          ) : data.length === 0 ? (
+            <div className="py-12 text-center text-muted-foreground text-sm">No progress log entries in this range.</div>
+          ) : null}
+        </div>
+      )}
+
+      {extra}
+    </div>
+  );
+}
+
+/* ─── Date helpers ───────────────────────────────────── */
+
+const MONTH_OPTIONS: { value: string; label: string }[] = [];
+for (let y = 2025; y <= 2030; y++) {
+  for (let m = 1; m <= 12; m++) {
+    const val = `${y}-${String(m).padStart(2, "0")}`;
+    const label = new Date(y, m - 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
+    MONTH_OPTIONS.push({ value: val, label });
+  }
+}
+
+function fmtDateRange(s: string | null, e: string | null): string {
+  const fmt = (d: string) => new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  if (s && e) return `${fmt(s)} → ${fmt(e)}`;
+  if (s) return `From ${fmt(s)}`;
+  if (e) return `Until ${fmt(e)}`;
+  return "";
+}
+
+/* ─── Shared chart-data builder ──────────────────────── */
+
+interface ChartItem {
+  id: string; name: string; totalPts: number; burntPts: number;
+  data: BurnPoint[]; hasDate: boolean; dateLabel: string;
+  startDate: string | null; endDate: string | null;
+  track: TrackInfo;
+}
+
+function buildItemChart(
+  id: string,
+  tasks: SubTask[],
+  logs: ProgressLogEntry[],
+  name: string,
+  startDate: string | null,
+  endDate: string | null,
+): ChartItem | null {
+  const total = tasks.reduce((s, t) => s + t.points, 0);
+  if (total === 0) return null;
+  const burnt = tasks.reduce((s, t) => s + Math.round(t.points * t.completionPercent / 100), 0);
+  const sd = toISO(startDate);
+  const ed = toISO(endDate);
+  const hasDate = !!(sd && ed);
+  const data = hasDate ? buildBurndown(total, logs, sd!, ed!) : [];
+  const track = computeTrackInfo(total, burnt, startDate, endDate);
+  return { id, name, totalPts: total, burntPts: burnt, data, hasDate, dateLabel: fmtDateRange(startDate, endDate), startDate, endDate, track };
+}
+
+function buildTaskChart(
+  task: SubTask,
+  logs: ProgressLogEntry[],
+  parentStart: string | null,
+  parentEnd: string | null,
+): ChartItem | null {
+  if (task.points === 0) return null;
+  const taskLogs = logs.filter(l => l.subTaskId === task.id);
+  const sd = toISO(parentStart);
+  const ed = toISO(parentEnd);
+  const hasDate = !!(sd && ed);
+  const data = hasDate ? buildBurndown(task.points, taskLogs, sd!, ed!) : [];
+  const burnt = Math.round(task.points * task.completionPercent / 100);
+  const track = computeTrackInfo(task.points, burnt, parentStart, parentEnd);
+  return { id: task.id, name: task.name, totalPts: task.points, burntPts: burnt, data, hasDate, dateLabel: fmtDateRange(parentStart, parentEnd), startDate: parentStart, endDate: parentEnd, track };
+}
+
+/* ─── Dropdown select ────────────────────────────────── */
+
+function LevelSelect({ label, value, onChange, options, disabled }: {
+  label: string; value: string; onChange: (v: string) => void;
+  options: { value: string; label: string }[]; disabled?: boolean;
+}) {
+  return (
+    <div className="flex-1 min-w-[160px]">
+      <label className="block text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">{label}</label>
+      <select
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        disabled={disabled}
+        className="w-full h-9 text-sm border rounded-md px-2 bg-background disabled:opacity-40 disabled:cursor-not-allowed truncate"
+      >
+        <option value="__all__">All {label}s</option>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+/* ─── Main ───────────────────────────────────────────── */
+
+export default function BurndownView({ workstreams, progressLogs }: {
+  workstreams: Workstream[]; progressLogs: ProgressLogEntry[];
+}) {
+  const router = useRouter();
+
+  const [rangeStart, setRangeStart] = useState("2026-01");
+  const [rangeEnd, setRangeEnd] = useState("2026-12");
+
+  const [selWs, setSelWs] = useState("__all__");
+  const [selDel, setSelDel] = useState("__all__");
+  const [selInit, setSelInit] = useState("__all__");
+  const [selTask, setSelTask] = useState("__all__");
+
+  const handleWsChange = useCallback((v: string) => { setSelWs(v); setSelDel("__all__"); setSelInit("__all__"); setSelTask("__all__"); }, []);
+  const handleDelChange = useCallback((v: string) => { setSelDel(v); setSelInit("__all__"); setSelTask("__all__"); }, []);
+  const handleInitChange = useCallback((v: string) => { setSelInit(v); setSelTask("__all__"); }, []);
+
+  const clickWs = useCallback((id: string) => { setSelWs(id); setSelDel("__all__"); setSelInit("__all__"); setSelTask("__all__"); }, []);
+  const clickDel = useCallback((id: string) => { setSelDel(id); setSelInit("__all__"); setSelTask("__all__"); }, []);
+  const clickInit = useCallback((id: string) => { setSelInit(id); setSelTask("__all__"); }, []);
+  const clickTask = useCallback((id: string) => { setSelTask(id); }, []);
+
+  const { totalPts, burntPts } = useMemo(() => {
+    let total = 0, burnt = 0;
+    for (const ws of workstreams) {
+      for (const st of allSubTasks(ws)) {
+        total += st.points;
+        burnt += Math.round(st.points * st.completionPercent / 100);
+      }
+    }
+    return { totalPts: total, burntPts: burnt };
+  }, [workstreams]);
+
+  const overallStart = rangeStart + "-01";
+  const overallEndD = new Date(rangeEnd + "-01T12:00:00Z");
+  overallEndD.setUTCMonth(overallEndD.getUTCMonth() + 1);
+  overallEndD.setUTCDate(0);
+  const overallEnd = overallEndD.toISOString().slice(0, 10);
+  const overallChart = useMemo(() => buildBurndown(totalPts, progressLogs, overallStart, overallEnd), [totalPts, progressLogs, overallStart, overallEnd]);
+  const overallTrack = useMemo(() => computeTrackInfo(totalPts, burntPts, overallStart, overallEnd), [totalPts, burntPts, overallStart, overallEnd]);
+
+  /* ── Dropdown options ── */
+
+  const wsOptions = useMemo(() =>
+    workstreams.filter(ws => allSubTasks(ws).length > 0).map(ws => ({ value: ws.id, label: ws.name })),
+    [workstreams]);
+
+  const activeWs = useMemo(() => selWs !== "__all__" ? workstreams.find(ws => ws.id === selWs) : undefined, [selWs, workstreams]);
+
+  const delOptions = useMemo(() => {
+    if (!activeWs) return [];
+    return (activeWs.deliverables ?? [])
+      .filter(d => d.initiatives.flatMap(i => i.subTasks).length > 0)
+      .map(d => ({ value: d.id, label: d.name }));
+  }, [activeWs]);
+
+  const activeDel = useMemo(() => selDel !== "__all__" ? (activeWs?.deliverables ?? []).find(d => d.id === selDel) : undefined, [selDel, activeWs]);
+
+  const initOptions = useMemo(() => {
+    if (activeDel) return activeDel.initiatives.filter(i => i.subTasks.length > 0).map(i => ({ value: i.id, label: i.name }));
+    if (activeWs) return allInits(activeWs).filter(i => i.subTasks.length > 0).map(i => ({ value: i.id, label: i.name }));
+    return [];
+  }, [activeDel, activeWs]);
+
+  const activeInit = useMemo(() => {
+    if (selInit === "__all__") return undefined;
+    if (activeDel) return activeDel.initiatives.find(i => i.id === selInit);
+    if (activeWs) return allInits(activeWs).find(i => i.id === selInit);
+    return undefined;
+  }, [selInit, activeDel, activeWs]);
+
+  const taskOptions = useMemo(() => {
+    if (activeInit) return activeInit.subTasks.filter(t => t.points > 0).map(t => ({ value: t.id, label: t.name }));
+    return [];
+  }, [activeInit]);
+
+  const activeTask = useMemo(() => selTask !== "__all__" ? activeInit?.subTasks.find(t => t.id === selTask) : undefined, [selTask, activeInit]);
+
+  /* ── Primary drill-down chart ── */
+
+  const drillDown = useMemo((): ChartItem | null => {
+    if (selWs === "__all__") return null;
+
+    if (activeTask && activeInit) {
+      return buildTaskChart(activeTask, progressLogs, activeInit.startDate, activeInit.endDate);
+    }
+    if (activeInit && selTask === "__all__") {
+      const logs = progressLogs.filter(l => l.initiativeId === activeInit.id);
+      return buildItemChart(activeInit.id, activeInit.subTasks, logs, activeInit.name, activeInit.startDate, activeInit.endDate);
+    }
+    if (activeDel && selInit === "__all__") {
+      const tasks = activeDel.initiatives.flatMap(i => i.subTasks);
+      const logs = progressLogs.filter(l => l.deliverableId === activeDel.id);
+      return buildItemChart(activeDel.id, tasks, logs, activeDel.name, activeDel.startDate, activeDel.endDate);
+    }
+    if (activeWs && selDel === "__all__") {
+      const tasks = allSubTasks(activeWs);
+      const logs = progressLogs.filter(l => l.workstreamId === activeWs.id);
+      return buildItemChart(activeWs.id, tasks, logs, activeWs.name, activeWs.startDate, activeWs.endDate);
+    }
+    return null;
+  }, [activeWs, activeDel, activeInit, activeTask, selWs, selDel, selInit, selTask, progressLogs]);
+
+  /* ── Child charts ── */
+  const allWsCharts = useMemo(() => {
+    if (selWs !== "__all__") return null;
+    return workstreams
+      .map(ws => {
+        const tasks = allSubTasks(ws);
+        const logs = progressLogs.filter(l => l.workstreamId === ws.id);
+        return buildItemChart(ws.id, tasks, logs, ws.name, ws.startDate, ws.endDate);
+      })
+      .filter(Boolean) as ChartItem[];
+  }, [selWs, workstreams, progressLogs]);
+
+  const deliverableCharts = useMemo(() => {
+    if (!activeWs || selDel !== "__all__") return null;
+    return (activeWs.deliverables ?? [])
+      .map(del => {
+        const tasks = del.initiatives.flatMap(i => i.subTasks);
+        const logs = progressLogs.filter(l => l.deliverableId === del.id);
+        return buildItemChart(del.id, tasks, logs, del.name, del.startDate, del.endDate);
+      })
+      .filter(Boolean) as ChartItem[];
+  }, [activeWs, selDel, progressLogs]);
+
+  const featureCharts = useMemo(() => {
+    if (!activeDel || selInit !== "__all__") return null;
+    return activeDel.initiatives
+      .map(init => {
+        const logs = progressLogs.filter(l => l.initiativeId === init.id);
+        return buildItemChart(init.id, init.subTasks, logs, init.name, init.startDate, init.endDate);
+      })
+      .filter(Boolean) as ChartItem[];
+  }, [activeDel, selInit, progressLogs]);
+
+  const taskCharts = useMemo(() => {
+    if (!activeInit || selTask !== "__all__") return null;
+    return activeInit.subTasks
+      .map(t => buildTaskChart(t, progressLogs, activeInit.startDate, activeInit.endDate))
+      .filter(Boolean) as ChartItem[];
+  }, [activeInit, selTask, progressLogs]);
+
+  const activeTaskLogs = useMemo(() => {
+    if (!activeTask) return [];
+    return progressLogs
+      .filter(l => l.subTaskId === activeTask.id)
+      .sort((a, b) => String(b.logDate ?? "").localeCompare(String(a.logDate ?? "")));
+  }, [activeTask, progressLogs]);
+
+  return (
+    <div className="space-y-8">
+      {/* Header + overall date range */}
+      <div className="flex items-start justify-between flex-wrap gap-4">
+        <div>
+          <h1 className="text-3xl font-bold">Burndown</h1>
+          <p className="text-muted-foreground mt-1">
+            {totalPts} total points across {workstreams.reduce((s, ws) => s + allSubTasks(ws).length, 0)} tasks
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs">
+          <label className="font-medium text-muted-foreground">Overall Range:</label>
+          <select value={rangeStart} onChange={e => setRangeStart(e.target.value)} className="h-7 text-xs border rounded px-1.5 bg-background">
+            {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <span className="text-muted-foreground">to</span>
+          <select value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} className="h-7 text-xs border rounded px-1.5 bg-background">
+            {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <SummaryCard label="Total Points" value={totalPts} />
+        <SummaryCard label="Completed" value={burntPts} color="text-green-600" />
+        <SummaryCard label="Remaining" value={totalPts - burntPts} color="text-orange-500" />
+        <SummaryCard label="Progress" value={`${totalPts > 0 ? Math.round(burntPts / totalPts * 100) : 0}%`} color="text-blue-600" pct={totalPts > 0 ? burntPts / totalPts * 100 : 0} />
+      </div>
+
+      {/* Overall burndown */}
+      <div className="flex gap-4">
+        <div className="flex-1 min-w-0">
+          <BurndownChart
+            title="Overall Project Burndown"
+            subtitle={`${progressLogs.length} progress updates`}
+            data={overallChart}
+            totalPts={totalPts}
+            burntPts={burntPts}
+            track={overallTrack}
+          />
+        </div>
+        <OverallRecentUpdates logs={progressLogs} />
+      </div>
+
+      {/* ── Drill-Down Section ── */}
+      <div className="space-y-5">
+        <h2 className="text-xl font-bold">Drill Down</h2>
+
+        <div className="flex flex-wrap gap-3">
+          <LevelSelect label="Workstream" value={selWs} onChange={handleWsChange} options={wsOptions} />
+          <LevelSelect label="Deliverable" value={selDel} onChange={handleDelChange} options={delOptions} disabled={selWs === "__all__"} />
+          <LevelSelect label="Feature" value={selInit} onChange={handleInitChange} options={initOptions} disabled={selDel === "__all__" && selWs === "__all__"} />
+          <LevelSelect label="Task" value={selTask} onChange={v => setSelTask(v)} options={taskOptions} disabled={selInit === "__all__"} />
+        </div>
+
+        {/* All Workstreams grid */}
+        {selWs === "__all__" && allWsCharts && allWsCharts.length > 0 && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {allWsCharts.map(c => (
+              <BurndownChart key={c.id} title={c.name} subtitle={c.hasDate ? c.dateLabel : undefined} data={c.data} totalPts={c.totalPts} burntPts={c.burntPts} noDate={!c.hasDate} onClick={() => clickWs(c.id)} track={c.track} />
+            ))}
+          </div>
+        )}
+
+        {/* Primary chart for selected level */}
+        {drillDown && (
+          <div className="flex gap-4">
+            <div className="flex-1 min-w-0">
+              <BurndownChart
+                title={drillDown.name}
+                subtitle={drillDown.hasDate ? drillDown.dateLabel : undefined}
+                data={drillDown.data}
+                totalPts={drillDown.totalPts}
+                burntPts={drillDown.burntPts}
+                noDate={!drillDown.hasDate}
+                track={drillDown.track}
+                extra={activeTask ? (
+                  <div className="mt-4 space-y-4">
+                    <LogUpdateForm subTask={activeTask} onSaved={() => router.refresh()} />
+                    {activeTaskLogs.length > 0 && (
+                      <div className="border-t pt-3 space-y-1.5">
+                        <p className="text-xs font-medium text-muted-foreground">Progress Log ({activeTaskLogs.length} entries)</p>
+                        <div className="max-h-[200px] overflow-y-auto space-y-1.5">
+                          {activeTaskLogs.map(l => (
+                            <div key={l.id} className="text-xs border-l-2 border-blue-300 pl-2">
+                              <span className="font-medium">
+                                {l.logDate ? new Date(l.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "No date"}
+                              </span>
+                              <span className="text-green-600 ml-2">+{l.currentPoints} pts</span>
+                              {l.completedBy && <span className="text-muted-foreground ml-1">by {l.completedBy}</span>}
+                              {l.updateComment && <p className="text-muted-foreground italic mt-0.5 line-clamp-2">{l.updateComment}</p>}
+                            </div>
+                          ))}
                         </div>
-                        <span className="text-[10px] font-mono text-muted-foreground">{subLive.completedPoints}/{subLive.scopePoints} ({subPct}%)</span>
                       </div>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Last updated: {initLastUpdatedMap.get(init.id) ?? "—"}</p>
-                    </CardHeader>
-                    <CardContent className="px-2 pb-2">
-                      <ResponsiveContainer width="100%" height={150}>
-                        <LineChart data={subChart.data} margin={{ top: 5, right: 5, left: 0, bottom: 10 }}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="label" tick={{ fontSize: 6 }} interval={0} angle={-45} textAnchor="end" height={45} />
-                          <YAxis tick={{ fontSize: 8 }} width={25} />
-                          <Tooltip content={<BurndownTooltip />} />
-                          <Line type="monotone" dataKey="scopeLine" stroke="#a855f7" strokeWidth={1.5} dot={false} name="Scope Adjusted" />
-                          {!hideIdeal && <Line type="monotone" dataKey="ideal" stroke="#3b82f6" strokeWidth={1} dot={false} strokeDasharray="3 3" />}
-                          <Line type="monotone" dataKey="remaining" stroke="#f97316" strokeWidth={2} dot={(props: any) => {
-                            const { cx, cy, payload } = props;
-                            if (payload?.remaining === null || payload?.remaining === undefined) return <g />;
-                            return <circle cx={cx} cy={cy} r={2.5} fill="#f97316" />;
-                          }} connectNulls />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </CardContent>
-                  </Card>
+                    )}
+                  </div>
+                ) : undefined}
+              />
+            </div>
+            <RecentUpdates logs={progressLogs} filterId={drillDown.id} level={activeTask ? "task" : activeInit ? "initiative" : activeDel ? "deliverable" : "workstream"} />
+          </div>
+        )}
+
+        {/* Workstream → Deliverable children */}
+        {activeWs && selDel === "__all__" && deliverableCharts && deliverableCharts.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Deliverables in {activeWs.name}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {deliverableCharts.map(c => (
+                <BurndownChart key={c.id} title={c.name} subtitle={c.hasDate ? c.dateLabel : undefined} data={c.data} totalPts={c.totalPts} burntPts={c.burntPts} noDate={!c.hasDate} onClick={() => clickDel(c.id)} track={c.track} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Deliverable → Feature children */}
+        {activeDel && selInit === "__all__" && featureCharts && featureCharts.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Features in {activeDel.name}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {featureCharts.map(c => (
+                <BurndownChart key={c.id} title={c.name} subtitle={c.hasDate ? c.dateLabel : undefined} data={c.data} totalPts={c.totalPts} burntPts={c.burntPts} noDate={!c.hasDate} onClick={() => clickInit(c.id)} track={c.track} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Feature → Task children */}
+        {activeInit && selTask === "__all__" && taskCharts && taskCharts.length > 0 && (
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-muted-foreground">Tasks in {activeInit.name}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {taskCharts.map(c => {
+                const st = activeInit.subTasks.find(t => t.id === c.id);
+                return (
+                  <BurndownChart
+                    key={c.id} title={c.name} subtitle={c.hasDate ? c.dateLabel : undefined}
+                    data={c.data} totalPts={c.totalPts} burntPts={c.burntPts} noDate={!c.hasDate}
+                    onClick={() => clickTask(c.id)} track={c.track}
+                    extra={st ? <LogUpdateForm subTask={st} onSaved={() => router.refresh()} compact /> : undefined}
+                  />
                 );
               })}
             </div>
           </div>
-        );
-      })()}
+        )}
+      </div>
+    </div>
+  );
+}
 
-      {/* ── Subcomponent Details Table ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Subcomponent Details ({filteredWs.flatMap(ws => ws.initiatives).length})</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b text-left">
-                  <th className="pb-2 font-semibold">Subcomponent</th>
-                  <th className="pb-2 font-semibold text-center">Points</th>
-                  <th className="pb-2 font-semibold text-center">Completed</th>
-                  <th className="pb-2 font-semibold text-center">%</th>
-                  <th className="pb-2 font-semibold text-center">Owner</th>
-                  <th className="pb-2 font-semibold">Status</th>
-                  <th className="pb-2 font-semibold">Progress</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredWs.flatMap(ws => ws.initiatives.map(init => {
-                  const pts = init.subTasks.reduce((s, t) => s + t.points, 0);
-                  const completed = init.subTasks.reduce((s, t) => s + stCompletedPts(t), 0);
-                  const pct = pts > 0 ? Math.round((completed / pts) * 100) : 0;
-                  return (
-                    <tr key={init.id} className="border-b last:border-0 hover:bg-accent/30">
-                      <td className="py-2.5 pr-2"><div className="font-medium">{init.name}</div><div className="text-[10px] text-muted-foreground">{ws.name} · {init.subTasks.length} subtasks</div></td>
-                      <td className="py-2.5 text-center font-mono">{pts}</td>
-                      <td className="py-2.5 text-center font-mono text-green-600">{completed}</td>
-                      <td className="py-2.5 text-center font-bold">{pct}%</td>
-                      <td className="py-2.5 text-center text-xs font-medium">{init.ownerInitials || "—"}</td>
-                      <td className="py-2.5"><Badge variant="secondary" className="text-[10px]" style={{ backgroundColor: STATUS_COLORS[init.status] + "20", color: STATUS_COLORS[init.status] }}>{init.status.replace(/_/g, " ")}</Badge></td>
-                      <td className="py-2.5 w-32"><div className="w-full bg-gray-200 rounded-full h-2"><div className="h-2 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: pct === 100 ? "#22c55e" : "#3b82f6" }} /></div></td>
-                    </tr>
-                  );
-                }))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
+/* ─── Overall Recent Updates sidebar ─────────────────── */
+
+function OverallRecentUpdates({ logs }: { logs: ProgressLogEntry[] }) {
+  const recent = useMemo(() =>
+    [...logs]
+      .sort((a, b) => String(b.logDate ?? "").localeCompare(String(a.logDate ?? "")))
+      .slice(0, 5),
+    [logs]);
+
+  if (recent.length === 0) return null;
+
+  return (
+    <div className="w-72 shrink-0 hidden lg:block">
+      <div className="rounded-lg border border-border p-4 sticky top-4">
+        <h4 className="text-sm font-semibold mb-3">Recent Updates</h4>
+        <div className="space-y-3">
+          {recent.map(l => (
+            <div key={l.id} className="text-xs border-l-2 border-orange-300 pl-2.5">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="font-semibold text-foreground">{resolveTaskName(l)}</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span>{l.logDate ? new Date(l.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</span>
+                <span className="text-green-600 font-medium">+{l.currentPoints} pts</span>
+                {l.completedBy && <span>by {l.completedBy}</span>}
+              </div>
+              {l.updateComment && (
+                <p className="text-muted-foreground italic mt-0.5 leading-snug line-clamp-2">{l.updateComment}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Recent Updates sidebar ─────────────────────────── */
+
+function RecentUpdates({ logs, filterId, level }: {
+  logs: ProgressLogEntry[];
+  filterId: string;
+  level: "workstream" | "deliverable" | "initiative" | "task";
+}) {
+  const recent = useMemo(() => {
+    let filtered: ProgressLogEntry[];
+    switch (level) {
+      case "workstream": filtered = logs.filter(l => l.workstreamId === filterId); break;
+      case "deliverable": filtered = logs.filter(l => l.deliverableId === filterId); break;
+      case "initiative": filtered = logs.filter(l => l.initiativeId === filterId); break;
+      case "task": filtered = logs.filter(l => l.subTaskId === filterId); break;
+    }
+    return filtered
+      .sort((a, b) => String(b.logDate ?? "").localeCompare(String(a.logDate ?? "")))
+      .slice(0, 5);
+  }, [logs, filterId, level]);
+
+  if (recent.length === 0) return null;
+
+  return (
+    <div className="w-72 shrink-0 hidden lg:block">
+      <div className="rounded-lg border border-border p-4 sticky top-4">
+        <h4 className="text-sm font-semibold mb-3">Recent Updates</h4>
+        <div className="space-y-3">
+          {recent.map(l => (
+            <div key={l.id} className="text-xs border-l-2 border-orange-300 pl-2.5">
+              <div className="flex items-center gap-1.5 mb-0.5">
+                <span className="font-semibold text-foreground">{resolveTaskName(l)}</span>
+              </div>
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <span>{l.logDate ? new Date(l.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</span>
+                <span className="text-green-600 font-medium">+{l.currentPoints} pts</span>
+                {l.completedBy && <span>by {l.completedBy}</span>}
+              </div>
+              {l.updateComment && (
+                <p className="text-muted-foreground italic mt-0.5 leading-snug line-clamp-2">{l.updateComment}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Summary Card ───────────────────────────────────── */
+
+function SummaryCard({ label, value, color, pct }: {
+  label: string; value: number | string; color?: string; pct?: number;
+}) {
+  return (
+    <div className="rounded-lg border border-border p-5 text-center">
+      <p className="text-xs text-muted-foreground mb-1">{label}</p>
+      <p className={`text-3xl font-bold ${color ?? ""}`}>{typeof value === "number" ? value.toLocaleString() : value}</p>
+      {pct !== undefined && (
+        <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
+          <div className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-green-500 transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Log Update Form ────────────────────────────────── */
+
+function LogUpdateForm({ subTask, onSaved, compact }: { subTask: SubTask; onSaved: () => void; compact?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const [currentPts, setCurrentPts] = useState(String(Math.round(subTask.points * subTask.completionPercent / 100)));
+  const [totalPts, setTotalPts] = useState(String(subTask.points));
+  const [pct, setPct] = useState(String(subTask.completionPercent));
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [flash, setFlash] = useState<string | null>(null);
+
+  const handleSave = useCallback(async () => {
+    if (saving) return;
+    setSaving(true);
+    setFlash(null);
+    try {
+      await logProgressUpdate({
+        subTaskId: subTask.id,
+        currentPoints: parseFloat(currentPts) || 0,
+        totalPoints: parseFloat(totalPts) || 0,
+        percentComplete: parseFloat(pct) || 0,
+        comment,
+      });
+      setFlash("Update logged and pushed to Notion");
+      setComment("");
+      setOpen(false);
+      onSaved();
+    } catch (err) {
+      setFlash(`Error: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSaving(false);
+      setTimeout(() => setFlash(null), 4000);
+    }
+  }, [subTask.id, currentPts, totalPts, pct, comment, saving, onSaved]);
+
+  if (!open) {
+    return (
+      <div className={compact ? "mt-2" : "mt-3 border-t pt-3"}>
+        {flash && <p className="text-[10px] text-green-600 mb-1">{flash}</p>}
+        <button
+          onClick={(e) => { e.stopPropagation(); setOpen(true); }}
+          className="text-[11px] text-blue-600 hover:text-blue-700 font-medium flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+          </svg>
+          Log Update
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`${compact ? "mt-2" : "mt-3 border-t pt-3"} space-y-2`} onClick={e => e.stopPropagation()}>
+      <p className="text-[11px] font-semibold text-muted-foreground">Log Progress Update</p>
+      {flash && <p className="text-[10px] text-green-600">{flash}</p>}
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label className="block text-[9px] text-muted-foreground mb-0.5">Current Pts</label>
+          <input type="number" min={0} value={currentPts} onChange={e => setCurrentPts(e.target.value)} className="w-full h-6 text-[11px] border rounded px-1.5 bg-background" />
+        </div>
+        <div>
+          <label className="block text-[9px] text-muted-foreground mb-0.5">Total Pts</label>
+          <input type="number" min={0} value={totalPts} onChange={e => setTotalPts(e.target.value)} className="w-full h-6 text-[11px] border rounded px-1.5 bg-background" />
+        </div>
+        <div>
+          <label className="block text-[9px] text-muted-foreground mb-0.5">% Complete</label>
+          <input type="number" min={0} max={100} value={pct} onChange={e => setPct(e.target.value)} className="w-full h-6 text-[11px] border rounded px-1.5 bg-background" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-[9px] text-muted-foreground mb-0.5">Comment</label>
+        <input
+          type="text"
+          value={comment}
+          onChange={e => setComment(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(); } }}
+          placeholder="What changed?"
+          className="w-full h-6 text-[11px] border rounded px-1.5 bg-background"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <button onClick={handleSave} disabled={saving} className="text-[10px] font-medium px-2.5 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
+          {saving ? "Saving…" : "Save & Push to Notion"}
+        </button>
+        <button onClick={() => setOpen(false)} disabled={saving} className="text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

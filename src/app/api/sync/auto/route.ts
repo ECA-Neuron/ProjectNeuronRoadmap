@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { runPullOnly, runPushOnly } from "@/lib/sync/roadmap-sync";
+import { pullOpenIssues } from "@/lib/sync/open-issues-sync";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,16 @@ export async function GET() {
     if (pullStale) {
       const result = await runPullOnly("AUTO");
       pullSynced = result.pullResult.synced;
+
+      try {
+        const issueResult = await pullOpenIssues();
+        pullSynced += issueResult.synced;
+        if (issueResult.errors.length > 0) {
+          console.log("[auto-sync] Open issues pull errors:", issueResult.errors);
+        }
+      } catch (e) {
+        console.error("[auto-sync] Open issues pull failed:", e);
+      }
     }
 
     if (pushStale) {

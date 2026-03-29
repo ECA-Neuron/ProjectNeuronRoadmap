@@ -18,13 +18,14 @@ export type NotionLevel = "Workstream" | "Deliverable" | "Feature" | "Task";
 
 export interface ParsedNotionPage {
   notionPageId: string;
-  parentNotionId: string | null; // parent page id (sub-item hierarchy)
+  parentNotionId: string | null;
   level: NotionLevel | null;
   name: string;
   status: string;
   startDate: Date | null;
   endDate: Date | null;
   points: number;
+  percentComplete: number;
   assignName: string | null;
   openIssuesFlag: boolean;
   lastEditedTime: Date;
@@ -91,6 +92,14 @@ function getNumber(
   if (prop.type === "number" && prop.number != null) {
     return prop.number;
   }
+  if (prop.type === "formula") {
+    const f = prop.formula as { type: string; number?: number | null };
+    if (f.type === "number" && f.number != null) return f.number;
+  }
+  if (prop.type === "rollup") {
+    const r = prop.rollup as { type: string; number?: number | null };
+    if (r.type === "number" && r.number != null) return r.number;
+  }
   return 0;
 }
 
@@ -111,6 +120,15 @@ function getPeopleName(
     return p.name ?? null;
   }
   return null;
+}
+
+function getRelationIds(
+  prop: PageObjectResponse["properties"][string]
+): string[] {
+  if (prop.type === "relation") {
+    return prop.relation.map((r) => r.id);
+  }
+  return [];
 }
 
 /**
@@ -145,8 +163,13 @@ export function parseNotionPage(page: PageObjectResponse): ParsedNotionPage {
     ? getDateRange(dateProp)
     : { start: null, end: null };
 
-  const pointsProp = findProp("points") ?? findProp("story points");
+  const pointsProp = findProp("total points") ?? findProp("points") ?? findProp("story points");
   const points = pointsProp ? getNumber(pointsProp) : 0;
+
+  const pctProp = findProp("percent complete") ?? findProp("completion") ?? findProp("% complete");
+  const pctRaw = pctProp ? getNumber(pctProp) : 0;
+  // Notion stores 0.8 for 80%; DB stores 0–100 integer
+  const percentComplete = pctRaw > 0 && pctRaw <= 1 ? Math.round(pctRaw * 100) : Math.round(pctRaw);
 
   const assignProp = findProp("assign") ?? findProp("assignee") ?? findProp("assigned");
   const assignName = assignProp ? getPeopleName(assignProp) : null;
@@ -154,11 +177,10 @@ export function parseNotionPage(page: PageObjectResponse): ParsedNotionPage {
   const flagProp = findProp("open issues flag") ?? findProp("open issues");
   const openIssuesFlag = flagProp ? getCheckbox(flagProp) : false;
 
-  // Parent page id (for sub-item hierarchy)
-  let parentNotionId: string | null = null;
-  if (page.parent.type === "page_id") {
-    parentNotionId = page.parent.page_id;
-  }
+  // Parent from the "Parent (L1)" relation property (Notion DB hierarchy)
+  const parentProp = findProp("parent (l1)") ?? findProp("parent");
+  const parentIds = parentProp ? getRelationIds(parentProp) : [];
+  const parentNotionId = parentIds.length > 0 ? parentIds[0] : null;
 
   return {
     notionPageId: page.id,
@@ -169,6 +191,7 @@ export function parseNotionPage(page: PageObjectResponse): ParsedNotionPage {
     startDate,
     endDate,
     points,
+    percentComplete,
     assignName,
     openIssuesFlag,
     lastEditedTime: new Date(page.last_edited_time),

@@ -114,6 +114,7 @@ export function OpenIssuesView({
   const [newWs, setNewWs] = useState(workstreams[0]?.id || "");
   const [newSubTask, setNewSubTask] = useState("");
   const [newScreenshot, setNewScreenshot] = useState<string | null>(null);
+  const [newAssignees, setNewAssignees] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function refresh() {
@@ -170,19 +171,71 @@ export function OpenIssuesView({
         description: newDesc.trim() || null,
         severity: newSeverity,
         screenshotUrl: newScreenshot,
+        assigneeIds: newAssignees.length > 0 ? newAssignees : undefined,
       }));
       setNewTitle("");
       setNewDesc("");
       setNewSeverity("NOT_A_CONCERN");
       setNewSubTask("");
       setNewScreenshot(null);
+      setNewAssignees([]);
       setShowCreateForm(false);
       refresh();
     });
   }
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ text: string; type: "ok" | "err" } | null>(null);
+
+  const doSync = async (direction: "pull" | "push") => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await fetch("/api/sync/open-issues", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ direction }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSyncMsg({ text: data.error ?? `Sync failed (${res.status})`, type: "err" }); return; }
+      const label = direction === "pull" ? "Pulled" : "Pushed";
+      const errCount = data.errors?.length ?? 0;
+      const errText = errCount > 0 ? data.errors.join("; ") : "";
+      setSyncMsg({ text: errCount > 0 ? errText : `${label} ${data.synced} issues`, type: errCount > 0 ? "err" : "ok" });
+      if (data.synced > 0) refresh();
+    } catch {
+      setSyncMsg({ text: "Network error", type: "err" });
+    } finally {
+      setSyncing(false);
+      setTimeout(() => setSyncMsg(null), 15000);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {/* ── Sync Toolbar ── */}
+      <div className="flex items-center gap-2 justify-end">
+        {syncMsg && (
+          <span className={`text-[11px] px-2 py-1 rounded max-w-md ${
+            syncMsg.type === "ok" ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400" : "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400"
+          }`}>{syncMsg.text}</span>
+        )}
+        <button
+          onClick={() => doSync("pull")}
+          disabled={syncing}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-border bg-card hover:bg-accent transition-colors disabled:opacity-50"
+        >
+          {syncing ? "Syncing..." : "Pull from Notion"}
+        </button>
+        <button
+          onClick={() => doSync("push")}
+          disabled={syncing}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800"
+        >
+          {syncing ? "Syncing..." : "Push to Notion"}
+        </button>
+      </div>
+
       {/* ── Summary Cards ── */}
       <div className="grid grid-cols-4 gap-3">
         <Card>
@@ -259,108 +312,250 @@ export function OpenIssuesView({
           </span>
         </div>
         {canEdit && (
-          <Button size="sm" onClick={() => setShowCreateForm(true)} disabled={isPending}>
+          <Button
+            size="sm"
+            onClick={() => setShowCreateForm(true)}
+            disabled={isPending}
+            className="font-semibold text-white shadow-md border-0 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 dark:from-violet-500 dark:to-indigo-500 dark:hover:from-violet-400 dark:hover:to-indigo-400"
+          >
             + New Issue
           </Button>
         )}
       </div>
 
-      {/* ── Create Issue Form ── */}
+      {/* ── Create Issue Form (modal) ── */}
       {showCreateForm && (
-        <Card className="border-primary/30">
-          <CardContent className="pt-5 space-y-4">
-            <h3 className="font-bold text-sm">Report New Issue</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Title *</label>
-                <Input
-                  className="h-9"
-                  placeholder="Brief issue title..."
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  autoFocus
-                />
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-issue-title"
+        >
+          <button
+            type="button"
+            className="absolute inset-0 bg-background/70 backdrop-blur-sm"
+            aria-label="Close dialog"
+            onClick={() => setShowCreateForm(false)}
+          />
+          <div className="relative z-10 flex max-h-[min(90vh,760px)] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-2xl shadow-black/20 dark:shadow-black/40">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border/60 bg-card px-6 py-4">
+              <div className="min-w-0 pr-2">
+                <h3 id="create-issue-title" className="text-base font-semibold tracking-tight">
+                  Report new issue
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Add details, severity, and who should own follow-up.
+                </p>
               </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Severity</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                  value={newSeverity}
-                  onChange={(e) => setNewSeverity(e.target.value)}
+              <button
+                type="button"
+                className="shrink-0 rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setShowCreateForm(false)}
+                aria-label="Close"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden
                 >
-                  <option value="STOPPING">Stopping — blocks work entirely</option>
-                  <option value="SLOWING">Slowing — degraded progress</option>
-                  <option value="NOT_A_CONCERN">Not a concern at this time</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Workstream *</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                  value={newWs}
-                  onChange={(e) => { setNewWs(e.target.value); setNewSubTask(""); }}
-                >
-                  {workstreams.map((ws) => (
-                    <option key={ws.id} value={ws.id}>{ws.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Blocks Sub-Task (optional)</label>
-                <select
-                  className="w-full rounded-md border px-3 py-2 text-sm bg-background"
-                  value={newSubTask}
-                  onChange={(e) => setNewSubTask(e.target.value)}
-                >
-                  <option value="">— None —</option>
-                  {availableSubTasks.map((st) => (
-                    <option key={st.id} value={st.id}>[{st.initiativeName}] {st.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Description</label>
-                <textarea
-                  className="w-full rounded-md border px-3 py-2 text-sm bg-background min-h-[80px] resize-y"
-                  placeholder="Describe the issue, steps to reproduce, impact..."
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                />
-              </div>
-              <div className="md:col-span-2">
-                <label className="text-xs font-semibold text-muted-foreground block mb-1">Screenshot (optional)</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="text-sm"
-                    onChange={handleFileUpload}
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                    Title <span className="text-destructive">*</span>
+                  </label>
+                  <Input
+                    className="h-10 rounded-lg border-border/80"
+                    placeholder="Brief issue title…"
+                    value={newTitle}
+                    onChange={(e) => setNewTitle(e.target.value)}
+                    autoFocus
                   />
-                  {newScreenshot && (
-                    <div className="relative">
-                      <Image src={newScreenshot} alt="Screenshot preview" width={64} height={64} className="h-16 w-16 rounded border object-cover" unoptimized />
-                      <button
-                        className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center"
-                        onClick={() => { setNewScreenshot(null); if (fileInputRef.current) fileInputRef.current.value = ""; }}
-                      >
-                        &times;
-                      </button>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-xs font-semibold text-muted-foreground">Severity</label>
+                  <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Issue severity">
+                    {(["STOPPING", "SLOWING", "NOT_A_CONCERN"] as const).map((key) => {
+                      const cfg = SEVERITY_CONFIG[key];
+                      const selected = newSeverity === key;
+                      const subtitles: Record<typeof key, string> = {
+                        STOPPING: "Blocks work entirely",
+                        SLOWING: "Degraded progress",
+                        NOT_A_CONCERN: "Low priority for now",
+                      };
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setNewSeverity(key)}
+                          className={`flex min-w-0 flex-1 flex-col items-start rounded-xl border px-3.5 py-2.5 text-left text-xs transition-all sm:min-w-[140px] sm:flex-none ${
+                            selected
+                              ? `${cfg.bg} ${cfg.border} ${cfg.color} ring-2 ring-primary/25 ring-offset-2 ring-offset-background`
+                              : "border-border/80 bg-muted/25 text-muted-foreground hover:border-border hover:bg-muted/40"
+                          }`}
+                        >
+                          <span className={`font-semibold ${selected ? cfg.color : "text-foreground"}`}>
+                            {cfg.label}
+                          </span>
+                          <span className="mt-0.5 text-[11px] opacity-80">{subtitles[key]}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                    Workstream <span className="text-destructive">*</span>
+                  </label>
+                  <select
+                    className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-sm"
+                    value={newWs}
+                    onChange={(e) => {
+                      setNewWs(e.target.value);
+                      setNewSubTask("");
+                    }}
+                  >
+                    {workstreams.map((ws) => (
+                      <option key={ws.id} value={ws.id}>
+                        {ws.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">
+                    Blocks sub-task (optional)
+                  </label>
+                  <select
+                    className="h-10 w-full rounded-lg border border-border/80 bg-background px-3 text-sm"
+                    value={newSubTask}
+                    onChange={(e) => setNewSubTask(e.target.value)}
+                  >
+                    <option value="">— None —</option>
+                    {availableSubTasks.map((st) => (
+                      <option key={st.id} value={st.id}>
+                        [{st.initiativeName}] {st.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">Assign to</label>
+                  <p className="mb-2 text-[11px] text-muted-foreground">Select one or more people. You can change this later on the issue card.</p>
+                  {people.length === 0 ? (
+                    <p className="text-xs text-muted-foreground italic">No people available to assign.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {people.map((p) => {
+                        const selected = newAssignees.includes(p.id);
+                        const label = p.initials || p.name.slice(0, 2).toUpperCase();
+                        return (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() =>
+                              setNewAssignees((prev) =>
+                                selected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                              )
+                            }
+                            className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-left text-xs font-medium transition-all ${
+                              selected
+                                ? "border-primary bg-primary/10 text-primary shadow-sm"
+                                : "border-border/80 bg-muted/20 text-muted-foreground hover:border-border hover:bg-muted/35"
+                            }`}
+                          >
+                            <span
+                              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+                                selected ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                              }`}
+                            >
+                              {label}
+                            </span>
+                            <span className="max-w-[160px] truncate">{p.name}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">Description</label>
+                  <textarea
+                    className="min-h-[96px] w-full resize-y rounded-lg border border-border/80 bg-background px-3 py-2.5 text-sm"
+                    placeholder="Describe the issue, steps to reproduce, impact…"
+                    value={newDesc}
+                    onChange={(e) => setNewDesc(e.target.value)}
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="mb-1.5 block text-xs font-semibold text-muted-foreground">Screenshot (optional)</label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="text-sm file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs"
+                      onChange={handleFileUpload}
+                    />
+                    {newScreenshot && (
+                      <div className="relative">
+                        <Image
+                          src={newScreenshot}
+                          alt="Screenshot preview"
+                          width={64}
+                          height={64}
+                          className="h-16 w-16 rounded-lg border border-border/80 object-cover"
+                          unoptimized
+                        />
+                        <button
+                          type="button"
+                          className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white shadow"
+                          onClick={() => {
+                            setNewScreenshot(null);
+                            if (fileInputRef.current) fileInputRef.current.value = "";
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={handleCreate} disabled={isPending || !newTitle.trim()}>
-                Create Issue
+            <div className="flex shrink-0 flex-wrap gap-2 border-t border-border/60 bg-muted/10 px-6 py-4">
+              <Button
+                size="sm"
+                className="rounded-lg"
+                onClick={handleCreate}
+                disabled={isPending || !newTitle.trim()}
+              >
+                Create issue
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setShowCreateForm(false)}>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="rounded-lg"
+                onClick={() => setShowCreateForm(false)}
+              >
                 Cancel
               </Button>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       )}
 
       {/* ── Issues List ── */}

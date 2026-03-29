@@ -5,23 +5,24 @@ import BurndownView from "./burndown-view";
 export const dynamic = "force-dynamic";
 
 export default async function BurndownPage() {
-  const [programs, workstreams, snapshots] = await Promise.all([
-    prisma.program.findMany({
-      orderBy: { createdAt: "asc" },
-      select: {
-        id: true,
-        name: true,
-        fyStartYear: true,
-        fyEndYear: true,
-        startDate: true,
-        targetDate: true,
-      },
-    }),
+  const [workstreams, progressLogs] = await Promise.all([
     prisma.workstream.findMany({
-      orderBy: { sortOrder: "asc" },
+      orderBy: { name: "asc" },
       include: {
+        deliverables: {
+          orderBy: { sortOrder: "asc" },
+          include: {
+            initiatives: {
+              where: { archivedAt: null },
+              orderBy: { sortOrder: "asc" },
+              include: {
+                subTasks: { orderBy: { sortOrder: "asc" } },
+              },
+            },
+          },
+        },
         initiatives: {
-          where: { archivedAt: null },
+          where: { archivedAt: null, deliverableId: null },
           orderBy: { sortOrder: "asc" },
           include: {
             subTasks: { orderBy: { sortOrder: "asc" } },
@@ -29,25 +30,31 @@ export default async function BurndownPage() {
         },
       },
     }),
-    prisma.burnSnapshot.findMany({
-      orderBy: [{ programId: "asc" }, { date: "asc" }],
+    prisma.progressLog.findMany({
+      orderBy: { logDate: "asc" },
       select: {
         id: true,
-        programId: true,
-        date: true,
+        taskName: true,
         totalPoints: true,
-        completedPoints: true,
+        currentPoints: true,
         percentComplete: true,
-        workstreamData: true,
+        updateComment: true,
+        completedBy: true,
+        logDate: true,
+        workstreamId: true,
+        deliverableId: true,
+        initiativeId: true,
+        subTaskId: true,
+        subTask: { select: { name: true } },
+        initiative: { select: { name: true } },
       },
     }),
   ]);
 
   return (
     <BurndownView
-      programs={serializeForClient(programs) as unknown as { id: string; name: string; fyStartYear: number; fyEndYear: number; startDate: string | null; targetDate: string | null }[]}
-      workstreams={serializeForClient(workstreams) as unknown as Parameters<typeof BurndownView>[0]["workstreams"]}
-      snapshots={serializeForClient(snapshots) as unknown as Parameters<typeof BurndownView>[0]["snapshots"]}
+      workstreams={serializeForClient(workstreams)}
+      progressLogs={serializeForClient(progressLogs)}
     />
   );
 }

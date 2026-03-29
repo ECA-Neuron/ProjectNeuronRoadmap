@@ -67,6 +67,27 @@ export default async function MyDashboardPage() {
     orderBy: [{ status: "asc" }, { updatedAt: "desc" }],
   });
 
+  const myOpenIssues = person
+    ? await prisma.openIssue.findMany({
+        where: {
+          resolvedAt: null,
+          OR: [
+            { assignees: { some: { personId: person.id } } },
+            { comments: { some: { mentions: { some: { personId: person.id } } } } },
+          ],
+        },
+        include: {
+          workstream: { select: { id: true, name: true } },
+          subTask: { select: { id: true, name: true } },
+          assignees: { include: { person: { select: { id: true, name: true, initials: true } } } },
+        },
+        orderBy: [
+          { severity: "asc" },
+          { createdAt: "desc" },
+        ],
+      })
+    : [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -80,6 +101,7 @@ export default async function MyDashboardPage() {
         userName={userName}
         tasks={serializeForClient(subTasks)}
         features={serializeForClient(initiatives)}
+        openIssues={serializeForClient(myOpenIssues)}
       />
     </div>
   );

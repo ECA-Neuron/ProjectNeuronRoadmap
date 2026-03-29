@@ -136,12 +136,97 @@ export function AdminView({
     }
   };
 
+  const [notionStatus, setNotionStatus] = useState<{
+    loading: boolean;
+    data: null | {
+      accessibleDatabases: { id: string; title: string }[];
+      requiredChecks: { name: string; found: boolean; dbTitle: string | null }[];
+      allConnected: boolean;
+    };
+    error: string | null;
+  }>({ loading: false, data: null, error: null });
+
+  const checkNotionConnection = async () => {
+    setNotionStatus({ loading: true, data: null, error: null });
+    try {
+      const res = await fetch("/api/debug/notion-status");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to check");
+      setNotionStatus({ loading: false, data, error: null });
+    } catch (err) {
+      setNotionStatus({ loading: false, data: null, error: err instanceof Error ? err.message : String(err) });
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-bold">Admin</h1>
         <p className="text-muted-foreground mt-1">User management, Notion sync &amp; date refinement</p>
       </div>
+
+      {/* Notion Connection Status */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center justify-between">
+            <span>Notion Connection Status</span>
+            <Button onClick={checkNotionConnection} disabled={notionStatus.loading} variant="outline" size="sm">
+              {notionStatus.loading ? "Checking..." : "Check Connection"}
+            </Button>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {!notionStatus.data && !notionStatus.error && !notionStatus.loading && (
+            <p className="text-sm text-muted-foreground">Click "Check Connection" to see which Notion databases are accessible.</p>
+          )}
+          {notionStatus.error && (
+            <p className="text-sm text-red-600">{notionStatus.error}</p>
+          )}
+          {notionStatus.data && (
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Required Databases</h4>
+                <div className="space-y-1">
+                  {notionStatus.data.requiredChecks.map((c) => (
+                    <div key={c.name} className="flex items-center gap-2 text-sm">
+                      <span className={`w-2 h-2 rounded-full ${c.found ? "bg-green-500" : "bg-red-500"}`} />
+                      <span className={c.found ? "text-green-700 dark:text-green-400" : "text-red-700 dark:text-red-400"}>
+                        {c.name}
+                      </span>
+                      {c.found && c.dbTitle && <span className="text-muted-foreground">→ "{c.dbTitle}"</span>}
+                      {!c.found && <span className="text-red-500 text-xs">(not accessible — re-authorize Notion and select this database)</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <h4 className="text-sm font-semibold mb-2">All Accessible Databases ({notionStatus.data.accessibleDatabases.length})</h4>
+                {notionStatus.data.accessibleDatabases.length === 0 ? (
+                  <p className="text-sm text-red-600">No databases accessible. Sign out and sign back in via Notion, making sure to select all databases on the authorization screen.</p>
+                ) : (
+                  <ul className="text-xs text-muted-foreground space-y-0.5">
+                    {notionStatus.data.accessibleDatabases.map((db) => (
+                      <li key={db.id}>"{db.title || "(untitled)"}" <span className="opacity-50">({db.id})</span></li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              {!notionStatus.data.allConnected && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                  <p className="font-semibold">How to fix:</p>
+                  <ol className="list-decimal pl-4 space-y-0.5">
+                    <li>Sign out of this app</li>
+                    <li>Click "Sign in with Notion"</li>
+                    <li>On the Notion authorization page, click <strong>"Select pages"</strong></li>
+                    <li>Check <strong>all three databases</strong>: Neuron Workstreams Roadmap, Roadmap Progress Log, and 🔴 Open Issues</li>
+                    <li>Click "Allow access"</li>
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Database Migration */}
       <Card>

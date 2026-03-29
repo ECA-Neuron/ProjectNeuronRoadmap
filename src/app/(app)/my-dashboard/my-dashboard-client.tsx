@@ -36,6 +36,17 @@ interface Feature {
   }[];
 }
 
+interface DashboardIssue {
+  id: string;
+  title: string;
+  severity: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  workstream: { id: string; name: string };
+  subTask: { id: string; name: string } | null;
+  assignees: { person: { id: string; name: string; initials: string | null } }[];
+}
+
 const STATUS_COLORS: Record<string, string> = {
   NOT_STARTED: "bg-gray-100 text-gray-700",
   IN_PROGRESS: "bg-blue-100 text-blue-700",
@@ -48,6 +59,12 @@ const STATUS_LABELS: Record<string, string> = {
   IN_PROGRESS: "In Progress",
   BLOCKED: "Blocked",
   DONE: "Done",
+};
+
+const SEV_CONFIG: Record<string, { label: string; dot: string; bg: string; text: string; border: string }> = {
+  STOPPING: { label: "Stopping", dot: "bg-red-500", bg: "bg-red-50 dark:bg-red-950/30", text: "text-red-700 dark:text-red-400", border: "border-red-200 dark:border-red-800" },
+  SLOWING: { label: "Slowing", dot: "bg-amber-500", bg: "bg-amber-50 dark:bg-amber-950/30", text: "text-amber-700 dark:text-amber-400", border: "border-amber-200 dark:border-amber-800" },
+  NOT_A_CONCERN: { label: "Low", dot: "bg-green-500", bg: "bg-green-50 dark:bg-green-950/30", text: "text-green-700 dark:text-green-400", border: "border-green-200 dark:border-green-800" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -89,10 +106,12 @@ export function MyDashboardClient({
   userName,
   tasks,
   features,
+  openIssues = [],
 }: {
   userName: string;
   tasks: Task[];
   features: Feature[];
+  openIssues?: DashboardIssue[];
 }) {
   const [filter, setFilter] = useState<FilterStatus>("ALL");
 
@@ -104,7 +123,7 @@ export function MyDashboardClient({
   const inProgressTasks = tasks.filter((t) => t.status === "IN_PROGRESS").length;
   const blockedTasks = tasks.filter((t) => t.status === "BLOCKED").length;
 
-  const hasItems = tasks.length > 0 || features.length > 0;
+  const hasItems = tasks.length > 0 || features.length > 0 || openIssues.length > 0;
 
   return (
     <div className="space-y-6">
@@ -143,6 +162,52 @@ export function MyDashboardClient({
             Tasks assigned to &ldquo;{userName}&rdquo; in Notion will appear here after syncing.
           </p>
         </div>
+      )}
+
+      {/* My Open Issues */}
+      {openIssues.length > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <h2 className="text-lg font-semibold">My Open Issues</h2>
+            <span className="rounded-full bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-400 px-2 py-0.5 text-xs font-medium">{openIssues.length}</span>
+          </div>
+          <div className="grid gap-2">
+            {openIssues.map((issue) => {
+              const sev = SEV_CONFIG[issue.severity] ?? SEV_CONFIG.NOT_A_CONCERN;
+              return (
+                <a
+                  key={issue.id}
+                  href="/open-issues"
+                  className={`group flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/50 ${sev.border}`}
+                >
+                  <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${sev.dot}`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm truncate">{issue.title}</span>
+                      <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${sev.bg} ${sev.text}`}>{sev.label}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                      <span>{issue.workstream.name}</span>
+                      {issue.subTask && <><span>·</span><span>Blocks: {issue.subTask.name}</span></>}
+                      <span>·</span>
+                      <span>{new Date(issue.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                    </div>
+                    {issue.assignees.length > 0 && (
+                      <div className="flex items-center gap-1 mt-1">
+                        {issue.assignees.map((a) => (
+                          <span key={a.person.id} className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-primary/10 text-[9px] font-bold text-primary" title={a.person.name}>
+                            {a.person.initials || a.person.name.slice(0, 2).toUpperCase()}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity text-xs mt-1">View →</span>
+                </a>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* Features (Initiatives) I own */}

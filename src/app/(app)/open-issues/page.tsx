@@ -146,11 +146,13 @@ export default async function OpenIssuesPage() {
   }
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-3xl font-bold">Open Issues</h1>
-        <p className="text-muted-foreground mt-1">
-          Track issues that block or slow down workstream sub-tasks. Use @Name or @Initials in comments to notify people. Same data as the Open Issues card on My Dashboard — resolve or comment here and it updates there.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Open Issues</h1>
+          <p className="text-muted-foreground mt-1">
+            Track issues that block or slow down workstream sub-tasks. Use @Name or @Initials in comments to notify people. Syncs with the Notion Open Issues database.
+          </p>
+        </div>
       </div>
       <OpenIssuesPageClient
         workstreams={serializeForClient(workstreams)}

@@ -123,6 +123,7 @@ model Workstream {
   partnerLinks         PartnerWorkstream[]
   openIssues           OpenIssue[]
   docs                 Documentation[] @relation("WorkstreamDocs")
+  progressLogs         ProgressLog[]
 }
 
 // ─── DELIVERABLE ──────────────────────────────────────
@@ -145,6 +146,7 @@ model Deliverable {
 
   workstream      Workstream   @relation(fields: [workstreamId], references: [id], onDelete: Cascade)
   initiatives     Initiative[]
+  progressLogs    ProgressLog[]
 }
 
 // ─── INITIATIVE ────────────────────────────────────────
@@ -192,6 +194,7 @@ model Initiative {
   // Dependencies (many-to-many self)
   dependsOn         InitiativeDependency[] @relation("DependsOn")
   dependedBy        InitiativeDependency[] @relation("DependedBy")
+  progressLogs      ProgressLog[]
 }
 
 // ─── SUB-TASK ─────────────────────────────────────────
@@ -224,6 +227,7 @@ model SubTask {
   assignee          Person?    @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
   openIssues        OpenIssue[]
   completionNotes   SubTaskCompletionNote[]
+  progressLogs      ProgressLog[]
 }
 
 // ─── SUBTASK COMPLETION NOTE (reason + timestamp when % updated) ───
@@ -245,6 +249,7 @@ model SubTaskCompletionNote {
 
 model OpenIssue {
   id              String    @id @default(cuid())
+  notionPageId    String?   @unique
   workstreamId    String
   subTaskId       String?   // optional: the subtask this issue blocks
   title           String
@@ -522,4 +527,40 @@ model SyncLog {
   completedAt   DateTime?
   itemsSynced   Int       @default(0)
   errors        String?   // JSON array of error messages
+}
+
+// ─── PROGRESS LOG ──────────────────────────────────────
+// Synced from Notion "Roadmap Progress Log" database.
+// Each row is a progress update for a roadmap item, linked to the current hierarchy.
+
+model ProgressLog {
+  id              String    @id @default(cuid())
+  notionPageId    String?   @unique
+  taskName        String
+  percentComplete Float     @default(0)
+  totalPoints     Float     @default(0)
+  currentPoints   Float     @default(0)
+  addedPoints     Float     @default(0)
+  updateComment   String?
+  scopeStatus     String?   // "Added", "Original", "Dropped"
+  logDate         DateTime?
+  completedBy     String?
+
+  subTaskId       String?
+  initiativeId    String?
+  deliverableId   String?
+  workstreamId    String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  subTask         SubTask?      @relation(fields: [subTaskId], references: [id], onDelete: SetNull)
+  initiative      Initiative?   @relation(fields: [initiativeId], references: [id], onDelete: SetNull)
+  deliverable     Deliverable?  @relation(fields: [deliverableId], references: [id], onDelete: SetNull)
+  workstream      Workstream?   @relation(fields: [workstreamId], references: [id], onDelete: SetNull)
+
+  @@index([workstreamId])
+  @@index([deliverableId])
+  @@index([initiativeId])
+  @@index([logDate])
 }

@@ -33,9 +33,17 @@ export default function SignInPage() {
             </svg>
             {loading ? "Redirecting to Notion..." : "Sign in with Notion"}
           </Button>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-800 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1.5">
+            <p className="font-semibold">Important: Select all databases when authorizing</p>
+            <p>On the Notion authorization screen, make sure to grant access to:</p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li><strong>Neuron Workstreams Roadmap</strong></li>
+              <li><strong>Roadmap Progress Log</strong></li>
+              <li><strong>🔴 Open Issues</strong></li>
+            </ul>
+            <p className="text-amber-600 dark:text-amber-400">Click "Select pages" and check all three databases, or use "Select all".</p>
+          </div>
           <p className="text-center text-xs text-muted-foreground">
-            You'll be redirected to Notion to authorize access.
-            <br />
             New users are granted Viewer access by default.
           </p>
         </CardContent>
