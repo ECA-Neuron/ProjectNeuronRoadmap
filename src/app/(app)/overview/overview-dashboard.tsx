@@ -260,132 +260,139 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
   }, [progressLogs, stats.totalPoints]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8 animate-fade-in">
       <div>
-        <h1 className="text-3xl font-bold">Project Overview</h1>
-        <p className="text-muted-foreground mt-1">High-level summary of the entire project</p>
+        <h1 className="text-2xl font-semibold tracking-tight">Project Overview</h1>
+        <p className="text-sm text-muted-foreground mt-1">High-level summary of the entire project</p>
       </div>
 
       {/* ── Top-Level Stats Cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-        <StatCard label="Workstreams" value={workstreams.length} />
-        <StatCard label="Deliverables" value={countDeliverables(workstreams)} />
-        <StatCard label="Features" value={countInitiatives(workstreams)} />
-        <StatCard label="Tasks" value={stats.total} />
-        <StatCard label="Total Points" value={stats.totalPoints} />
-        <StatCard label="Open Issues" value={openIssues.length} accent={openIssues.length > 0 ? "text-red-600" : undefined} />
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <StatCard label="Workstreams" value={workstreams.length} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 0 1 6 3.75h2.25A2.25 2.25 0 0 1 10.5 6v2.25a2.25 2.25 0 0 1-2.25 2.25H6a2.25 2.25 0 0 1-2.25-2.25V6Z" /></svg>} />
+        <StatCard label="Deliverables" value={countDeliverables(workstreams)} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 0 1-2.247 2.118H6.622a2.25 2.25 0 0 1-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125Z" /></svg>} />
+        <StatCard label="Features" value={countInitiatives(workstreams)} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904 9 18.75l-.813-2.846a4.5 4.5 0 0 0-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 0 0 3.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 0 0 3.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 0 0-3.09 3.09Z" /></svg>} />
+        <StatCard label="Tasks" value={stats.total} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>} />
+        <StatCard label="Total Points" value={stats.totalPoints} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75Z" /></svg>} accent="text-blue-600 dark:text-blue-400" />
+        <StatCard label="Open Issues" value={openIssues.length} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126Z" /></svg>} accent={openIssues.length > 0 ? "text-red-500 dark:text-red-400" : undefined} />
       </div>
 
       {/* ── Overall Progress ── */}
-      <div className="bg-card rounded-lg border border-border p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Overall Progress</h2>
-          <span className="text-2xl font-bold">{stats.overallPct}%</span>
+      <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold tracking-tight">Overall Progress</h2>
+          <span className="text-3xl font-bold tabular-nums tracking-tight">{stats.overallPct}%</span>
         </div>
-        <div className="w-full bg-muted rounded-full h-4 overflow-hidden">
-          <div className={`h-full rounded-full transition-all ${pctColor(stats.overallPct)}`} style={{ width: `${stats.overallPct}%` }} />
+        <div className="w-full bg-muted rounded-full h-3 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-700 ease-out"
+            style={{ width: `${stats.overallPct}%` }}
+          />
         </div>
-        <div className="flex gap-6 mt-3 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Done: {stats.done}</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> In Progress: {stats.inProgress}</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Blocked: {stats.blocked}</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" /> Not Started: {stats.notStarted}</span>
-          <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Points Burned: {stats.donePoints} / {stats.totalPoints}</span>
+        <div className="flex flex-wrap gap-x-6 gap-y-1.5 mt-4 text-xs text-muted-foreground">
+          <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> Done: {stats.done}</span>
+          <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-blue-500 inline-block" /> In Progress: {stats.inProgress}</span>
+          <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> Blocked: {stats.blocked}</span>
+          <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-gray-300 dark:bg-gray-600 inline-block" /> Not Started: {stats.notStarted}</span>
+          <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-amber-400 inline-block" /> Points Burned: {stats.donePoints} / {stats.totalPoints}</span>
         </div>
       </div>
 
       {/* ── Overall Burndown Chart ── */}
-      <div className="bg-card rounded-lg border border-border p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold">Overall Project Burndown</h2>
+      <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base font-semibold tracking-tight">Overall Project Burndown</h2>
           <div className="flex items-center gap-3">
-            <span className="text-xs text-muted-foreground">{stats.donePoints} / {stats.totalPoints} pts burned</span>
-            <Link href="/burndown" className="text-xs text-blue-600 hover:underline">Full burndown</Link>
+            <span className="text-xs text-muted-foreground tabular-nums">{stats.donePoints} / {stats.totalPoints} pts burned</span>
+            <Link href="/burndown" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">Full burndown →</Link>
           </div>
         </div>
         <OverviewBurndownChart data={burndownData} />
       </div>
 
       {/* ── Workstream Breakdown ── */}
-      <div className="bg-card rounded-lg border border-border p-5">
-        <h2 className="text-lg font-semibold mb-4">Workstream Breakdown</h2>
-        <div className="space-y-3">
+      <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+        <h2 className="text-base font-semibold tracking-tight mb-5">Workstream Breakdown</h2>
+        <div className="space-y-4">
           {wsStats.map(ws => (
-            <div key={ws.id} className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-sm shrink-0" style={{ backgroundColor: ws.color || "#6b7280" }} />
-              <span className="text-sm font-medium w-48 truncate" title={ws.name}>{ws.name}</span>
-              <div className="flex-1 bg-muted rounded-full h-2.5 overflow-hidden">
-                <div className={`h-full rounded-full ${pctColor(ws.pct)}`} style={{ width: `${ws.pct}%` }} />
+            <div key={ws.id} className="flex items-center gap-3 group">
+              <div className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-offset-1 ring-offset-card" style={{ backgroundColor: ws.color || "#6b7280", boxShadow: `0 0 0 0px ${ws.color || "#6b7280"}` }} />
+              <span className="text-[13px] font-medium w-48 truncate" title={ws.name}>{ws.name}</span>
+              <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-500 ${pctColor(ws.pct)}`} style={{ width: `${ws.pct}%` }} />
               </div>
-              <span className="text-xs font-mono w-10 text-right">{ws.pct}%</span>
-              <span className="text-xs text-muted-foreground w-20 text-right">{ws.done}/{ws.total} tasks</span>
+              <span className="text-xs font-semibold tabular-nums w-10 text-right">{ws.pct}%</span>
+              <span className="text-xs text-muted-foreground tabular-nums w-20 text-right">{ws.done}/{ws.total} tasks</span>
               {ws.issues > 0 && (
-                <span className="text-xs bg-red-100 text-red-700 px-1.5 py-0.5 rounded">{ws.issues} issues</span>
+                <span className="text-[10px] font-medium bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 px-2 py-0.5 rounded-full">{ws.issues} issues</span>
               )}
             </div>
           ))}
         </div>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-2 gap-6">
         {/* ── Open Issues Summary ── */}
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Open Issues</h2>
-            <Link href="/open-issues" className="text-xs text-blue-600 hover:underline">View all</Link>
+        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold tracking-tight">Open Issues</h2>
+            <Link href="/open-issues" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">View all →</Link>
           </div>
           {openIssues.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No open issues</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">No open issues</p>
           ) : (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
+            <div className="space-y-0 max-h-80 overflow-y-auto">
               {openIssues.slice(0, 10).map(issue => (
-                <div key={issue.id} className="flex items-start gap-2 text-sm border-b border-border pb-2 last:border-0">
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${SEV_COLORS[issue.severity] || SEV_COLORS.NOT_A_CONCERN}`}>
+                <div key={issue.id} className="flex items-start gap-3 py-2.5 border-b border-border/40 last:border-0">
+                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full shrink-0 mt-0.5 ${
+                    issue.severity === "STOPPING" ? "bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400" :
+                    issue.severity === "SLOWING" ? "bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400" :
+                    "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400"
+                  }`}>
                     {sevLabel(issue.severity)}
                   </span>
                   <div className="flex-1 min-w-0">
-                    <p className="truncate font-medium">{issue.title}</p>
-                    <p className="text-xs text-muted-foreground">{issue.workstream.name}</p>
+                    <p className="text-[13px] truncate font-medium">{issue.title}</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">{issue.workstream.name}</p>
                   </div>
                 </div>
               ))}
               {openIssues.length > 10 && (
-                <p className="text-xs text-muted-foreground text-center">+ {openIssues.length - 10} more</p>
+                <p className="text-xs text-muted-foreground text-center pt-2">+ {openIssues.length - 10} more</p>
               )}
             </div>
           )}
         </div>
 
         {/* ── Recent Activity ── */}
-        <div className="bg-card rounded-lg border border-border p-5">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold">Recent Activity</h2>
-            <Link href="/burndown" className="text-xs text-blue-600 hover:underline">Burndown</Link>
+        <div className="bg-card rounded-xl border border-border/60 p-6 shadow-card">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold tracking-tight">Recent Activity</h2>
+            <Link href="/burndown" className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline underline-offset-2">Burndown →</Link>
           </div>
           {recentLogs.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No progress updates yet</p>
+            <p className="text-sm text-muted-foreground py-4 text-center">No progress updates yet</p>
           ) : (
-            <div className="space-y-2 max-h-80 overflow-y-auto">
+            <div className="space-y-0 max-h-80 overflow-y-auto">
               {recentLogs.map(log => {
                 const displayName = log.subTask?.name || log.initiative?.name || cleanTaskName(log.taskName);
                 const wsName = log.workstream?.name;
                 return (
-                  <div key={log.id} className="text-sm border-b border-border pb-2 last:border-0">
+                  <div key={log.id} className="py-2.5 border-b border-border/40 last:border-0">
                     <div className="flex items-center justify-between">
-                      <span className="font-medium truncate flex-1 mr-2">{displayName}</span>
-                      <span className="text-xs text-muted-foreground shrink-0">
+                      <span className="text-[13px] font-medium truncate flex-1 mr-3">{displayName}</span>
+                      <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">
                         {new Date(log.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                       </span>
                     </div>
                     {wsName && (
-                      <p className="text-[10px] text-muted-foreground">{wsName}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">{wsName}</p>
                     )}
                     {log.updateComment && (
-                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{log.updateComment}</p>
+                      <p className="text-xs text-muted-foreground/80 mt-1 truncate italic">{log.updateComment}</p>
                     )}
-                    <div className="flex gap-3 mt-0.5 text-xs text-muted-foreground">
+                    <div className="flex gap-3 mt-1 text-[11px] text-muted-foreground">
                       {log.completedBy && <span>by {log.completedBy}</span>}
-                      {log.percentComplete != null && <span>{log.percentComplete}%</span>}
+                      {log.percentComplete != null && <span className="font-medium text-blue-600 dark:text-blue-400">{log.percentComplete}%</span>}
                     </div>
                   </div>
                 );
@@ -397,24 +404,29 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
 
       {/* ── Overdue Tasks ── */}
       {overdueTasks.length > 0 && (
-        <div className="bg-card rounded-lg border border-red-200 p-5">
-          <h2 className="text-lg font-semibold text-red-700 mb-3">
-            Overdue Tasks ({overdueTasks.length})
-          </h2>
+        <div className="bg-card rounded-xl border border-red-200/60 dark:border-red-900/40 p-6 shadow-card">
+          <div className="flex items-center gap-2 mb-4">
+            <div className="w-5 h-5 rounded-md bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
+              <svg className="w-3 h-3 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+            </div>
+            <h2 className="text-base font-semibold tracking-tight text-red-700 dark:text-red-400">
+              Overdue Tasks ({overdueTasks.length})
+            </h2>
+          </div>
           <div className="space-y-2 max-h-60 overflow-y-auto">
             {overdueTasks.slice(0, 15).map(t => {
               const days = Math.ceil((Date.now() - new Date(t.endDate!).getTime()) / 86400000);
               return (
-                <div key={t.id} className="flex items-center gap-2 text-sm">
-                  <span className="text-xs text-red-600 font-medium w-20 shrink-0">{days}d overdue</span>
+                <div key={t.id} className="flex items-center gap-3 py-1.5 text-[13px]">
+                  <span className="text-[11px] font-semibold text-red-500 tabular-nums w-20 shrink-0">{days}d overdue</span>
                   <span className="truncate flex-1">{t.name}</span>
-                  <span className="text-xs text-muted-foreground shrink-0">{t.endDate?.slice(0, 10)}</span>
-                  {t.assignee && <span className="text-xs bg-muted px-1.5 py-0.5 rounded">{t.assignee.initials || t.assignee.name}</span>}
+                  <span className="text-[11px] text-muted-foreground shrink-0 tabular-nums">{t.endDate?.slice(0, 10)}</span>
+                  {t.assignee && <span className="text-[11px] bg-muted px-2 py-0.5 rounded-md font-medium">{t.assignee.initials || t.assignee.name}</span>}
                 </div>
               );
             })}
             {overdueTasks.length > 15 && (
-              <p className="text-xs text-muted-foreground text-center">+ {overdueTasks.length - 15} more</p>
+              <p className="text-xs text-muted-foreground text-center pt-1">+ {overdueTasks.length - 15} more</p>
             )}
           </div>
         </div>
@@ -425,11 +437,14 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
 
 // ─── Sub-components ──────────────────────────────────
 
-function StatCard({ label, value, accent }: { label: string; value: number; accent?: string }) {
+function StatCard({ label, value, accent, icon }: { label: string; value: number; accent?: string; icon?: React.ReactNode }) {
   return (
-    <div className="bg-card rounded-lg border border-border p-4 text-center">
-      <p className={`text-2xl font-bold ${accent || ""}`}>{value}</p>
-      <p className="text-xs text-muted-foreground mt-0.5">{label}</p>
+    <div className="bg-card rounded-xl border border-border/60 p-4 shadow-card hover:shadow-card-hover transition-shadow duration-200">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-muted-foreground/50">{icon}</span>
+      </div>
+      <p className={`text-2xl font-bold tracking-tight tabular-nums ${accent || ""}`}>{value.toLocaleString()}</p>
+      <p className="text-[11px] text-muted-foreground mt-1 font-medium">{label}</p>
     </div>
   );
 }

@@ -161,7 +161,7 @@ export function AdminView({
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold">Admin</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Admin</h1>
         <p className="text-muted-foreground mt-1">User management, Notion sync &amp; date refinement</p>
       </div>
 

@@ -225,12 +225,12 @@ function computeTrackInfo(
   return { status, velocity, estCompletion, dueDate: ed, daysOff, daysAhead };
 }
 
-const TRACK_STYLES: Record<TrackInfo["status"], { bg: string; text: string; label: string }> = {
-  "on-track": { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", label: "On Track" },
-  "ahead":    { bg: "bg-blue-100 dark:bg-blue-900/30",  text: "text-blue-700 dark:text-blue-400",  label: "Ahead" },
-  "off-track":{ bg: "bg-red-100 dark:bg-red-900/30",    text: "text-red-700 dark:text-red-400",    label: "Off Track" },
-  "done":     { bg: "bg-green-100 dark:bg-green-900/30", text: "text-green-700 dark:text-green-400", label: "Complete" },
-  "no-data":  { bg: "bg-gray-100 dark:bg-gray-800",     text: "text-gray-500",                      label: "No Data" },
+const TRACK_STYLES: Record<TrackInfo["status"], { bg: string; text: string; label: string; icon: string }> = {
+  "on-track": { bg: "bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40", text: "text-emerald-700 dark:text-emerald-400", label: "On Track", icon: "✓" },
+  "ahead":    { bg: "bg-blue-50 dark:bg-blue-950/20 border border-blue-200/60 dark:border-blue-800/40",  text: "text-blue-700 dark:text-blue-400",  label: "Ahead", icon: "↑" },
+  "off-track":{ bg: "bg-red-50 dark:bg-red-950/20 border border-red-200/60 dark:border-red-800/40",    text: "text-red-600 dark:text-red-400",    label: "Off Track", icon: "!" },
+  "done":     { bg: "bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-800/40", text: "text-emerald-700 dark:text-emerald-400", label: "Complete", icon: "✓" },
+  "no-data":  { bg: "bg-gray-50 dark:bg-gray-900/30 border border-border/40",     text: "text-gray-500 dark:text-gray-400",                      label: "No Data", icon: "—" },
 };
 
 /* ─── Custom dot for progress update highlights ──────── */
@@ -256,23 +256,23 @@ function CustomTooltip({ active, payload }: any) {
   const pt = payload[0]?.payload as BurnPoint | undefined;
   if (!pt) return null;
   return (
-    <div className="bg-card border border-border rounded-lg shadow-lg p-3 max-w-[320px] text-xs z-50">
-      <p className="font-semibold text-sm mb-1">
+    <div className="bg-card border border-border/60 rounded-xl shadow-elevated p-4 max-w-[340px] text-xs z-50 backdrop-blur-sm">
+      <p className="font-semibold text-[13px] mb-2 tracking-tight">
         {pt.date ? fmtDate(pt.date) : ""}
       </p>
       <div className="flex gap-4 mb-1">
-        <span className="text-blue-600">Ideal: {pt.idealRemaining.toFixed(0)} pts</span>
-        {pt.actualRemaining !== null && <span className="text-orange-600">Actual: {pt.actualRemaining.toFixed(0)} pts</span>}
-        {pt.projectedRemaining !== null && pt.actualRemaining === null && <span className="text-orange-400">Projected: {pt.projectedRemaining.toFixed(0)} pts</span>}
+        <span className="text-blue-600 dark:text-blue-400 font-medium tabular-nums">Ideal: {pt.idealRemaining.toFixed(0)} pts</span>
+        {pt.actualRemaining !== null && <span className="text-orange-600 dark:text-orange-400 font-medium tabular-nums">Actual: {pt.actualRemaining.toFixed(0)} pts</span>}
+        {pt.projectedRemaining !== null && pt.actualRemaining === null && <span className="text-orange-400 font-medium tabular-nums">Projected: {pt.projectedRemaining.toFixed(0)} pts</span>}
       </div>
       {pt.dayLogs.length > 0 && (
-        <div className="border-t pt-1.5 mt-1 space-y-1 max-h-[200px] overflow-y-auto">
+        <div className="border-t border-border/40 pt-2 mt-2 space-y-1.5 max-h-[200px] overflow-y-auto">
           {pt.dayLogs.map((l, i) => (
             <div key={i} className="text-muted-foreground">
-              <span className="font-medium text-foreground">{l.taskName}</span>
-              {l.pts > 0 && <span className="text-green-600 ml-1">+{l.pts.toFixed(1)} pts</span>}
-              {l.by && <span className="ml-1">by {l.by}</span>}
-              {l.comment && <p className="text-[10px] mt-0.5 italic leading-tight line-clamp-2">{l.comment}</p>}
+              <span className="font-medium text-foreground text-[11px]">{l.taskName}</span>
+              {l.pts > 0 && <span className="text-emerald-600 dark:text-emerald-400 ml-1.5 font-semibold tabular-nums">+{l.pts.toFixed(1)} pts</span>}
+              {l.by && <span className="ml-1.5 text-[10px]">by {l.by}</span>}
+              {l.comment && <p className="text-[10px] mt-0.5 italic leading-tight line-clamp-2 text-muted-foreground/70">{l.comment}</p>}
             </div>
           ))}
         </div>
@@ -306,67 +306,69 @@ function BurndownChart({ title, subtitle, data, totalPts, burntPts, noDate, onCl
 
   return (
     <div
-      className={`rounded-lg border border-border p-5 min-w-0 overflow-hidden ${onClick ? "cursor-pointer hover:border-blue-400 hover:shadow-md transition-all" : ""}`}
+      className={`rounded-xl border border-border/60 bg-card p-6 min-w-0 overflow-hidden shadow-card transition-all duration-200 ${onClick ? "cursor-pointer hover:border-blue-400/60 hover:shadow-card-hover" : ""}`}
       onClick={onClick}
     >
-      <div className="mb-3">
-        <div className="flex items-start justify-between gap-3">
-          <h3 className="font-semibold text-base">{title}</h3>
-          <div className="text-right shrink-0">
-            <span className="text-2xl font-bold text-blue-600">{pct}%</span>
-            <p className="text-xs text-muted-foreground">{burntPts.toFixed(0)} / {totalPts.toFixed(0)} pts</p>
+      <div className="mb-4">
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-[15px] tracking-tight leading-snug">{title}</h3>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              {subtitle && <p className="text-[11px] text-muted-foreground">{subtitle}</p>}
+              {onClick && <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400">Click to drill in →</span>}
+            </div>
           </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2 mt-1">
-          {subtitle && <p className="text-xs text-muted-foreground">{subtitle}</p>}
-          {onClick && <span className="text-xs text-blue-500">Click to drill in →</span>}
+          <div className="text-right shrink-0">
+            <span className="text-2xl font-bold tracking-tight tabular-nums text-blue-600 dark:text-blue-400">{pct}%</span>
+            <p className="text-[11px] text-muted-foreground tabular-nums">{burntPts.toFixed(0)} / {totalPts.toFixed(0)} pts</p>
+          </div>
         </div>
       </div>
 
-      {/* Track status badge + velocity info */}
+      {/* Track status badge */}
       {style && track && track.status !== "no-data" && (
-        <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 px-3 py-2 rounded-md text-xs ${style.bg}`}>
+        <div className={`flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 px-3.5 py-2.5 rounded-lg text-[11px] ${style.bg}`}>
           <span className={`font-bold ${style.text}`}>{style.label}</span>
           {track.dueDate && (
             <span className="text-muted-foreground">
-              Due: <span className="font-semibold text-foreground">{fmtDate(track.dueDate)}</span>
+              Due: <span className="font-semibold text-foreground tabular-nums">{fmtDate(track.dueDate)}</span>
             </span>
           )}
           {track.velocity > 0 && (
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground tabular-nums">
               Velocity: {track.velocity.toFixed(1)} pts/day
             </span>
           )}
           {track.estCompletion && track.status !== "done" && (
             <span className="text-muted-foreground">
-              Projected completion: <span className="font-semibold text-foreground">{fmtDate(track.estCompletion)}</span>
+              Projected completion: <span className="font-semibold text-foreground tabular-nums">{fmtDate(track.estCompletion)}</span>
             </span>
           )}
           {track.status === "off-track" && track.daysOff > 0 && (
-            <span className="text-red-600 font-semibold">
+            <span className="text-red-600 dark:text-red-400 font-semibold tabular-nums">
               {track.daysOff} days late
             </span>
           )}
           {track.status === "ahead" && track.daysOff < 0 && (
-            <span className="text-blue-600 font-semibold">
+            <span className="text-blue-600 dark:text-blue-400 font-semibold tabular-nums">
               {Math.abs(track.daysOff)} days early
             </span>
           )}
           {track.status === "on-track" && track.daysOff > 0 && (
-            <span className="text-orange-600 font-semibold">
+            <span className="text-orange-600 dark:text-orange-400 font-semibold tabular-nums">
               {track.daysOff} days late
             </span>
           )}
           {track.status === "on-track" && track.daysOff < 0 && (
-            <span className="text-green-600 font-semibold">
+            <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">
               {Math.abs(track.daysOff)} days early
             </span>
           )}
         </div>
       )}
 
-      <div className="w-full h-2 bg-gray-200 rounded-full mb-4">
-        <div className="h-full bg-blue-500 rounded-full transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+      <div className="w-full h-1.5 bg-muted rounded-full mb-5">
+        <div className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
 
       {noDate ? (
@@ -374,24 +376,26 @@ function BurndownChart({ title, subtitle, data, totalPts, burntPts, noDate, onCl
       ) : (
         <div ref={containerRef}>
           {data.length > 0 && chartWidth > 0 ? (
-            <LineChart width={chartWidth} height={300} data={data}>
-              <CartesianGrid strokeDasharray="3 3" />
+            <LineChart width={chartWidth} height={280} data={data}>
+              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
               <XAxis
                 dataKey="label"
-                fontSize={9}
+                fontSize={10}
                 interval={0}
                 height={45}
                 tick={({ x, y, payload }: any) =>
                   payload.value
-                    ? <text x={x} y={y + 10} textAnchor="end" fontSize={9} fill="#666" transform={`rotate(-35, ${x}, ${y + 10})`}>{payload.value}</text>
+                    ? <text x={x} y={y + 10} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))" transform={`rotate(-35, ${x}, ${y + 10})`}>{payload.value}</text>
                     : <g />
                 }
+                axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 1 }}
+                tickLine={false}
               />
-              <YAxis fontSize={10} />
+              <YAxis fontSize={10} axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} />
               <Tooltip content={<CustomTooltip />} />
-              <Legend />
+              <Legend wrapperStyle={{ fontSize: "11px", paddingTop: "8px" }} />
               <Line type="linear" dataKey="idealRemaining" stroke="#3b82f6" strokeWidth={2} dot={false} activeDot={{ r: 4, fill: "#3b82f6" }} name="Ideal Remaining" />
-              <Line type="monotone" dataKey="actualRemaining" stroke="#f97316" strokeWidth={2} dot={<ActualDot />} activeDot={{ r: 6, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }} name="Actual Remaining" connectNulls={false} />
+              <Line type="monotone" dataKey="actualRemaining" stroke="#f97316" strokeWidth={2.5} dot={<ActualDot />} activeDot={{ r: 6, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }} name="Actual Remaining" connectNulls={false} />
               <Line type="linear" dataKey="projectedRemaining" stroke="#f97316" strokeWidth={1.5} strokeDasharray="6 4" dot={false} activeDot={{ r: 3, fill: "#fb923c" }} name="Projected (velocity)" connectNulls={false} />
             </LineChart>
           ) : data.length === 0 ? (
@@ -477,12 +481,12 @@ function LevelSelect({ label, value, onChange, options, disabled }: {
 }) {
   return (
     <div className="flex-1 min-w-[160px]">
-      <label className="block text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">{label}</label>
+      <label className="block text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5">{label}</label>
       <select
         value={value}
         onChange={e => onChange(e.target.value)}
         disabled={disabled}
-        className="w-full h-9 text-sm border rounded-md px-2 bg-background disabled:opacity-40 disabled:cursor-not-allowed truncate"
+        className="w-full h-9 text-[13px] border border-border/60 rounded-lg px-2.5 bg-background disabled:opacity-30 disabled:cursor-not-allowed truncate focus:ring-1 focus:ring-ring focus:outline-none transition-colors"
       >
         <option value="__all__">All {label}s</option>
         {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -644,22 +648,22 @@ export default function BurndownView({ workstreams, progressLogs }: {
   }, [activeTask, progressLogs]);
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 animate-fade-in">
       {/* Header + overall date range */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Burndown</h1>
-          <p className="text-muted-foreground mt-1">
-            {totalPts} total points across {workstreams.reduce((s, ws) => s + allSubTasks(ws).length, 0)} tasks
+          <h1 className="text-2xl font-semibold tracking-tight">Burndown</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {totalPts.toLocaleString()} total points across {workstreams.reduce((s, ws) => s + allSubTasks(ws).length, 0)} tasks
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs">
-          <label className="font-medium text-muted-foreground">Overall Range:</label>
-          <select value={rangeStart} onChange={e => setRangeStart(e.target.value)} className="h-7 text-xs border rounded px-1.5 bg-background">
+          <label className="font-medium text-muted-foreground text-[11px]">Range:</label>
+          <select value={rangeStart} onChange={e => setRangeStart(e.target.value)} className="h-8 text-[12px] border border-border/60 rounded-lg px-2 bg-background focus:ring-1 focus:ring-ring focus:outline-none">
             {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
           <span className="text-muted-foreground">to</span>
-          <select value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} className="h-7 text-xs border rounded px-1.5 bg-background">
+          <select value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} className="h-8 text-[12px] border border-border/60 rounded-lg px-2 bg-background focus:ring-1 focus:ring-ring focus:outline-none">
             {MONTH_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
@@ -667,10 +671,10 @@ export default function BurndownView({ workstreams, progressLogs }: {
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryCard label="Total Points" value={totalPts} />
-        <SummaryCard label="Completed" value={burntPts} color="text-green-600" />
-        <SummaryCard label="Remaining" value={totalPts - burntPts} color="text-orange-500" />
-        <SummaryCard label="Progress" value={`${totalPts > 0 ? Math.round(burntPts / totalPts * 100) : 0}%`} color="text-blue-600" pct={totalPts > 0 ? burntPts / totalPts * 100 : 0} />
+        <SummaryCard label="Total Points" value={totalPts} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75Z" /></svg>} />
+        <SummaryCard label="Completed" value={burntPts} color="text-emerald-600 dark:text-emerald-400" icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>} />
+        <SummaryCard label="Remaining" value={totalPts - burntPts} color="text-orange-500 dark:text-orange-400" icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>} />
+        <SummaryCard label="Progress" value={`${totalPts > 0 ? Math.round(burntPts / totalPts * 100) : 0}%`} color="text-blue-600 dark:text-blue-400" pct={totalPts > 0 ? burntPts / totalPts * 100 : 0} icon={<svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18 9 11.25l4.306 4.306a11.95 11.95 0 0 1 5.814-5.518l2.74-1.22m0 0-5.94-2.281m5.94 2.28-2.28 5.941" /></svg>} />
       </div>
 
       {/* Overall burndown */}
@@ -690,7 +694,7 @@ export default function BurndownView({ workstreams, progressLogs }: {
 
       {/* ── Drill-Down Section ── */}
       <div className="space-y-5">
-        <h2 className="text-xl font-bold">Drill Down</h2>
+        <h2 className="text-lg font-semibold tracking-tight">Drill Down</h2>
 
         <div className="flex flex-wrap gap-3">
           <LevelSelect label="Workstream" value={selWs} onChange={handleWsChange} options={wsOptions} />
@@ -751,7 +755,7 @@ export default function BurndownView({ workstreams, progressLogs }: {
         {/* Workstream → Deliverable children */}
         {activeWs && selDel === "__all__" && deliverableCharts && deliverableCharts.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-muted-foreground">Deliverables in {activeWs.name}</h3>
+            <h3 className="text-[13px] font-semibold text-muted-foreground tracking-tight">Deliverables in {activeWs.name}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {deliverableCharts.map(c => (
                 <BurndownChart key={c.id} title={c.name} subtitle={c.hasDate ? c.dateLabel : undefined} data={c.data} totalPts={c.totalPts} burntPts={c.burntPts} noDate={!c.hasDate} onClick={() => clickDel(c.id)} track={c.track} />
@@ -763,7 +767,7 @@ export default function BurndownView({ workstreams, progressLogs }: {
         {/* Deliverable → Feature children */}
         {activeDel && selInit === "__all__" && featureCharts && featureCharts.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-muted-foreground">Features in {activeDel.name}</h3>
+            <h3 className="text-[13px] font-semibold text-muted-foreground tracking-tight">Features in {activeDel.name}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {featureCharts.map(c => (
                 <BurndownChart key={c.id} title={c.name} subtitle={c.hasDate ? c.dateLabel : undefined} data={c.data} totalPts={c.totalPts} burntPts={c.burntPts} noDate={!c.hasDate} onClick={() => clickInit(c.id)} track={c.track} />
@@ -775,7 +779,7 @@ export default function BurndownView({ workstreams, progressLogs }: {
         {/* Feature → Task children */}
         {activeInit && selTask === "__all__" && taskCharts && taskCharts.length > 0 && (
           <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-muted-foreground">Tasks in {activeInit.name}</h3>
+            <h3 className="text-[13px] font-semibold text-muted-foreground tracking-tight">Tasks in {activeInit.name}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {taskCharts.map(c => {
                 const st = activeInit.subTasks.find(t => t.id === c.id);
@@ -809,21 +813,19 @@ function OverallRecentUpdates({ logs }: { logs: ProgressLogEntry[] }) {
 
   return (
     <div className="w-72 shrink-0 hidden lg:block">
-      <div className="rounded-lg border border-border p-4 sticky top-4">
-        <h4 className="text-sm font-semibold mb-3">Recent Updates</h4>
-        <div className="space-y-3">
+      <div className="rounded-xl border border-border/60 bg-card p-5 sticky top-4 shadow-card">
+        <h4 className="text-[13px] font-semibold tracking-tight mb-4">Recent Updates</h4>
+        <div className="space-y-3.5">
           {recent.map(l => (
-            <div key={l.id} className="text-xs border-l-2 border-orange-300 pl-2.5">
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="font-semibold text-foreground">{resolveTaskName(l)}</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <span>{l.logDate ? new Date(l.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</span>
-                <span className="text-green-600 font-medium">+{l.currentPoints} pts</span>
+            <div key={l.id} className="text-xs border-l-2 border-orange-400/60 pl-3">
+              <span className="font-semibold text-foreground text-[11px] leading-snug block">{resolveTaskName(l)}</span>
+              <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
+                <span className="tabular-nums">{l.logDate ? new Date(l.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">+{l.currentPoints} pts</span>
                 {l.completedBy && <span>by {l.completedBy}</span>}
               </div>
               {l.updateComment && (
-                <p className="text-muted-foreground italic mt-0.5 leading-snug line-clamp-2">{l.updateComment}</p>
+                <p className="text-muted-foreground/70 italic mt-1 leading-snug line-clamp-2 text-[10px]">{l.updateComment}</p>
               )}
             </div>
           ))}
@@ -857,21 +859,19 @@ function RecentUpdates({ logs, filterId, level }: {
 
   return (
     <div className="w-72 shrink-0 hidden lg:block">
-      <div className="rounded-lg border border-border p-4 sticky top-4">
-        <h4 className="text-sm font-semibold mb-3">Recent Updates</h4>
-        <div className="space-y-3">
+      <div className="rounded-xl border border-border/60 bg-card p-5 sticky top-4 shadow-card">
+        <h4 className="text-[13px] font-semibold tracking-tight mb-4">Recent Updates</h4>
+        <div className="space-y-3.5">
           {recent.map(l => (
-            <div key={l.id} className="text-xs border-l-2 border-orange-300 pl-2.5">
-              <div className="flex items-center gap-1.5 mb-0.5">
-                <span className="font-semibold text-foreground">{resolveTaskName(l)}</span>
-              </div>
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <span>{l.logDate ? new Date(l.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</span>
-                <span className="text-green-600 font-medium">+{l.currentPoints} pts</span>
+            <div key={l.id} className="text-xs border-l-2 border-orange-400/60 pl-3">
+              <span className="font-semibold text-foreground text-[11px] leading-snug block">{resolveTaskName(l)}</span>
+              <div className="flex items-center gap-2 text-muted-foreground mt-0.5">
+                <span className="tabular-nums">{l.logDate ? new Date(l.logDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date"}</span>
+                <span className="text-emerald-600 dark:text-emerald-400 font-semibold tabular-nums">+{l.currentPoints} pts</span>
                 {l.completedBy && <span>by {l.completedBy}</span>}
               </div>
               {l.updateComment && (
-                <p className="text-muted-foreground italic mt-0.5 leading-snug line-clamp-2">{l.updateComment}</p>
+                <p className="text-muted-foreground/70 italic mt-1 leading-snug line-clamp-2 text-[10px]">{l.updateComment}</p>
               )}
             </div>
           ))}
@@ -883,16 +883,17 @@ function RecentUpdates({ logs, filterId, level }: {
 
 /* ─── Summary Card ───────────────────────────────────── */
 
-function SummaryCard({ label, value, color, pct }: {
-  label: string; value: number | string; color?: string; pct?: number;
+function SummaryCard({ label, value, color, pct, icon }: {
+  label: string; value: number | string; color?: string; pct?: number; icon?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-lg border border-border p-5 text-center">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      <p className={`text-3xl font-bold ${color ?? ""}`}>{typeof value === "number" ? value.toLocaleString() : value}</p>
+    <div className="rounded-xl border border-border/60 bg-card p-5 shadow-card hover:shadow-card-hover transition-shadow duration-200">
+      {icon && <span className="text-muted-foreground/50 mb-2 block">{icon}</span>}
+      <p className={`text-3xl font-bold tracking-tight tabular-nums ${color ?? ""}`}>{typeof value === "number" ? value.toLocaleString() : value}</p>
+      <p className="text-[11px] text-muted-foreground mt-1 font-medium">{label}</p>
       {pct !== undefined && (
-        <div className="mt-2 w-full bg-gray-200 rounded-full h-2">
-          <div className="h-2 rounded-full bg-gradient-to-r from-blue-500 to-green-500 transition-all" style={{ width: `${Math.min(pct, 100)}%` }} />
+        <div className="mt-3 w-full bg-muted rounded-full h-1.5">
+          <div className="h-1.5 rounded-full bg-gradient-to-r from-blue-500 to-emerald-500 transition-all duration-500" style={{ width: `${Math.min(pct, 100)}%` }} />
         </div>
       )}
     </div>

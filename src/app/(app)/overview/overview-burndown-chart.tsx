@@ -20,12 +20,12 @@ function CustomTooltip({ active, payload }: any) {
   const fmtDate = (d: string) =>
     new Date(d + "T12:00:00Z").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
   return (
-    <div className="bg-card border border-border rounded-lg shadow-lg p-2.5 text-xs z-50">
-      <p className="font-semibold mb-1">{fmtDate(pt.date)}</p>
+    <div className="bg-card border border-border/60 rounded-xl shadow-elevated p-3.5 text-xs z-50 backdrop-blur-sm">
+      <p className="font-semibold text-[13px] tracking-tight mb-1.5">{fmtDate(pt.date)}</p>
       <div className="flex flex-col gap-0.5">
-        <span className="text-blue-600">Ideal: {pt.idealRemaining.toFixed(0)} pts</span>
-        {pt.actualRemaining !== null && <span className="text-orange-600">Actual: {pt.actualRemaining.toFixed(0)} pts</span>}
-        {pt.projectedRemaining !== null && pt.actualRemaining === null && <span className="text-orange-400">Projected: {pt.projectedRemaining.toFixed(0)} pts</span>}
+        <span className="text-blue-600 dark:text-blue-400 font-medium tabular-nums">Ideal: {pt.idealRemaining.toFixed(0)} pts</span>
+        {pt.actualRemaining !== null && <span className="text-orange-600 dark:text-orange-400 font-medium tabular-nums">Actual: {pt.actualRemaining.toFixed(0)} pts</span>}
+        {pt.projectedRemaining !== null && pt.actualRemaining === null && <span className="text-orange-400 font-medium tabular-nums">Projected: {pt.projectedRemaining.toFixed(0)} pts</span>}
       </div>
     </div>
   );
@@ -62,19 +62,21 @@ export default function OverviewBurndownChart({ data }: { data: BurnPoint[] }) {
               <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
+          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.4} />
           <XAxis
             dataKey="label"
-            fontSize={9}
+            fontSize={10}
             interval={0}
             height={40}
+            axisLine={{ stroke: "hsl(var(--border))", strokeWidth: 1 }}
+            tickLine={false}
             tick={({ x, y, payload }: any) =>
               payload.value
-                ? <text x={x} y={y + 10} textAnchor="end" fontSize={9} fill="#888" transform={`rotate(-35, ${x}, ${y + 10})`}>{payload.value}</text>
+                ? <text x={x} y={y + 10} textAnchor="end" fontSize={10} fill="hsl(var(--muted-foreground))" transform={`rotate(-35, ${x}, ${y + 10})`}>{payload.value}</text>
                 : <g />
             }
           />
-          <YAxis fontSize={10} />
+          <YAxis fontSize={10} axisLine={false} tickLine={false} tick={{ fill: "hsl(var(--muted-foreground))" }} />
           <Tooltip content={<CustomTooltip />} />
           <Legend />
           <Area type="monotone" dataKey="actualRemaining" stroke="#f97316" strokeWidth={2} fill="url(#overviewActualGrad)" name="Actual Remaining" connectNulls={false} />

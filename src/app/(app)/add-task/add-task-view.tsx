@@ -103,7 +103,7 @@ export function AddTaskView({ workstreams, people }: { workstreams: Workstream[]
   return (
     <div className="space-y-6 max-w-3xl">
       <div>
-        <h1 className="text-3xl font-bold">Add Task</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Add Task</h1>
         <p className="text-muted-foreground mt-1">
           Create a new task under any feature. It will be saved to the database and pushed to Notion automatically.
         </p>

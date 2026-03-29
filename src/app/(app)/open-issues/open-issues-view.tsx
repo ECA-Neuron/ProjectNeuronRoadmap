@@ -237,29 +237,29 @@ export function OpenIssuesView({
       </div>
 
       {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-4 gap-3">
-        <Card>
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-muted-foreground">Total Open</p>
-            <p className="text-3xl font-bold">{openIssues.length}</p>
+      <div className="grid grid-cols-4 gap-4">
+        <Card className="rounded-xl border-border/60 shadow-card">
+          <CardContent className="pt-5 pb-4 text-center">
+            <p className="text-[11px] font-medium text-muted-foreground mb-1">Total Open</p>
+            <p className="text-3xl font-bold tracking-tight tabular-nums">{openIssues.length}</p>
           </CardContent>
         </Card>
-        <Card className="border-red-200 dark:border-red-900">
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-red-600 dark:text-red-400 font-semibold">🔴 Stopping</p>
-            <p className="text-3xl font-bold text-red-600 dark:text-red-400">{stoppingCount}</p>
+        <Card className="rounded-xl border-red-200/60 dark:border-red-900/40 shadow-card">
+          <CardContent className="pt-5 pb-4 text-center">
+            <p className="text-[11px] font-semibold text-red-600 dark:text-red-400 mb-1">Stopping</p>
+            <p className="text-3xl font-bold tracking-tight tabular-nums text-red-600 dark:text-red-400">{stoppingCount}</p>
           </CardContent>
         </Card>
-        <Card className="border-yellow-200 dark:border-yellow-900">
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-yellow-600 dark:text-yellow-400 font-semibold">🟡 Slowing</p>
-            <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{slowingCount}</p>
+        <Card className="rounded-xl border-amber-200/60 dark:border-amber-900/40 shadow-card">
+          <CardContent className="pt-5 pb-4 text-center">
+            <p className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 mb-1">Slowing</p>
+            <p className="text-3xl font-bold tracking-tight tabular-nums text-amber-600 dark:text-amber-400">{slowingCount}</p>
           </CardContent>
         </Card>
-        <Card className="border-green-200 dark:border-green-900">
-          <CardContent className="pt-4 text-center">
-            <p className="text-xs text-green-600 dark:text-green-400 font-semibold">🟢 Not a Concern</p>
-            <p className="text-3xl font-bold text-green-600 dark:text-green-400">{notConcernCount}</p>
+        <Card className="rounded-xl border-emerald-200/60 dark:border-emerald-900/40 shadow-card">
+          <CardContent className="pt-5 pb-4 text-center">
+            <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 mb-1">Not a Concern</p>
+            <p className="text-3xl font-bold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">{notConcernCount}</p>
           </CardContent>
         </Card>
       </div>
@@ -268,7 +268,7 @@ export function OpenIssuesView({
       <div className="flex flex-wrap gap-3 items-center justify-between">
         <div className="flex flex-wrap gap-3 items-center">
           <select
-            className="rounded-md border px-3 py-1.5 text-sm bg-background"
+            className="rounded-lg border border-border/60 px-3 py-1.5 text-[13px] bg-background focus:ring-1 focus:ring-ring focus:outline-none transition-colors"
             value={filterWs}
             onChange={(e) => setFilterWs(e.target.value)}
           >
@@ -278,7 +278,7 @@ export function OpenIssuesView({
             ))}
           </select>
           <select
-            className="rounded-md border px-3 py-1.5 text-sm bg-background"
+            className="rounded-lg border border-border/60 px-3 py-1.5 text-[13px] bg-background focus:ring-1 focus:ring-ring focus:outline-none transition-colors"
             value={filterSeverity}
             onChange={(e) => setFilterSeverity(e.target.value)}
           >

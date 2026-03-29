@@ -10,7 +10,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <div className="min-h-screen">
           <Sidebar />
           <Header />
-          <main className="ml-64 mt-16 p-6 min-w-0">{children}</main>
+          <main className="ml-64 mt-14 p-8 min-w-0">{children}</main>
         </div>
       </LiveSyncProvider>
     </AutosaveProvider>

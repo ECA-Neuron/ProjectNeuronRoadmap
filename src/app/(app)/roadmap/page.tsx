@@ -77,7 +77,7 @@ export default async function RoadmapPage() {
   return (
     <div className="space-y-4">
       <div>
-        <h1 className="text-3xl font-bold">Roadmap</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Roadmap</h1>
         <p className="text-muted-foreground mt-1">
           Neuron Workstreams Roadmap. Expand workstreams to see deliverables, features, and tasks.
         </p>
