@@ -867,9 +867,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
     const gantt = ganttRef.current;
     if (!gantt) return { x: 0, y: 0 };
     const rect = gantt.getBoundingClientRect();
-    const scrollL = gantt.parentElement?.scrollLeft ?? 0;
-    const scrollT = gantt.parentElement?.scrollTop ?? 0;
-    return { x: e.clientX - rect.left + scrollL, y: e.clientY - rect.top + scrollT };
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }, []);
 
   const handleGanttMouseDown = useCallback((e: React.MouseEvent) => {
