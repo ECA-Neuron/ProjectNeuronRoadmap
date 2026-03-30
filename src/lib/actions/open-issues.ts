@@ -39,22 +39,41 @@ export async function createOpenIssue(data: unknown) {
   await requireRole(["ADMIN", "MEMBER"]);
   const parsed = openIssueSchema.parse(data);
   const assigneeIds = parsed.assigneeIds ?? [];
-  const createData: Record<string, unknown> = {
-    subTaskId: parsed.subTaskId || null,
-    title: parsed.title,
-    description: parsed.description || null,
-    severity: parsed.severity || "NOT_A_CONCERN",
-    screenshotUrl: parsed.screenshotUrl || null,
-    assignees: assigneeIds.length
-      ? { create: assigneeIds.map((personId: string) => ({ personId })) }
-      : undefined,
-  };
-  if (parsed.workstreamId) createData.workstreamId = parsed.workstreamId;
-  const issue = await prisma.openIssue.create({ data: createData as any });
-  revalidatePath("/open-issues");
-  revalidatePath("/workstreams");
-  revalidatePath("/my-dashboard");
-  return issue;
+
+  try {
+    const issue = await prisma.openIssue.create({
+      data: {
+        title: parsed.title,
+        description: parsed.description || null,
+        severity: parsed.severity || "NOT_A_CONCERN",
+        screenshotUrl: parsed.screenshotUrl || null,
+        subTaskId: parsed.subTaskId || null,
+        workstreamId: parsed.workstreamId || null,
+      },
+    });
+
+    if (assigneeIds.length > 0) {
+      await prisma.openIssueAssignee.createMany({
+        data: assigneeIds.map((personId: string) => ({ issueId: issue.id, personId })),
+        skipDuplicates: true,
+      });
+    }
+
+    try {
+      revalidatePath("/open-issues");
+      revalidatePath("/workstreams");
+      revalidatePath("/my-dashboard");
+    } catch {
+      // Revalidation can fail in edge cases; issue is already created
+    }
+
+    return { id: issue.id, title: issue.title };
+  } catch (err) {
+    console.error("createOpenIssue error:", err);
+    throw new Error(
+      err instanceof Error ? err.message : "Failed to create issue"
+    );
+  }
 }
 
 export async function updateOpenIssue(
