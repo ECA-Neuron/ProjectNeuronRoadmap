@@ -1494,6 +1494,105 @@ const TASK_STATUS_CFG: Record<TaskSummary["status"], { dot: string; label: strin
   "not-started": { dot: "bg-zinc-400", label: "Not Started" },
 };
 
+function QuickUpdateTaskRow({ task, totalFeaturePts }: { task: TaskSummary; totalFeaturePts: number }) {
+  const [open, setOpen] = useState(false);
+  const [pct, setPct] = useState(task.pct);
+  const [comment, setComment] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const router = useRouter();
+  const cfg = TASK_STATUS_CFG[task.status];
+
+  const handleSave = async () => {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const clamped = Math.max(0, Math.min(100, pct));
+      const currentPoints = Math.round((task.points * clamped) / 100);
+      await logProgressUpdate({
+        subTaskId: task.id,
+        currentPoints,
+        totalPoints: task.points,
+        percentComplete: clamped,
+        comment,
+      });
+      setSaved(true);
+      setComment("");
+      setTimeout(() => { setSaved(false); setOpen(false); }, 1200);
+      router.refresh();
+    } catch {
+      alert("Failed to save update");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div
+        className="flex items-center gap-1.5 text-[9px] group cursor-pointer rounded px-1 py-0.5 hover:bg-accent/30 transition-colors"
+        onClick={() => { setOpen(v => !v); setPct(task.pct); setComment(""); setSaved(false); }}
+      >
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} title={cfg.label} />
+        <span className="min-w-0 flex-1 truncate" title={task.name}>{task.name}</span>
+        {task.assignee && <span className="text-[8px] text-muted-foreground/60 shrink-0">{task.assignee}</span>}
+        <div className="w-10 h-1 rounded-full bg-muted overflow-hidden shrink-0">
+          <div
+            className={`h-full rounded-full ${task.status === "done" ? "bg-emerald-500" : task.status === "off-track" ? "bg-red-500" : task.status === "on-track" ? "bg-blue-500" : "bg-zinc-400"}`}
+            style={{ width: `${Math.min(task.pct, 100)}%` }}
+          />
+        </div>
+        <span className="w-7 text-right tabular-nums font-semibold shrink-0">{task.pct}%</span>
+      </div>
+
+      {open && (
+        <div className="ml-3 mr-1 mt-1 mb-1.5 rounded-md border border-border/40 bg-background/80 p-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <label className="text-[8px] text-muted-foreground shrink-0 w-5">%</label>
+            <input
+              type="range"
+              min={0} max={100} step={5}
+              value={pct}
+              onChange={e => setPct(Number(e.target.value))}
+              className="flex-1 h-1 accent-blue-500 cursor-pointer"
+            />
+            <input
+              type="number"
+              min={0} max={100}
+              value={pct}
+              onChange={e => setPct(Math.max(0, Math.min(100, Number(e.target.value))))}
+              className="w-10 text-[9px] tabular-nums text-center rounded border border-border/50 bg-transparent py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500/40"
+            />
+          </div>
+          <textarea
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            placeholder="Comment (optional)..."
+            rows={2}
+            className="w-full text-[9px] rounded border border-border/50 bg-transparent px-1.5 py-1 resize-none focus:outline-none focus:ring-1 focus:ring-blue-500/40 placeholder:text-muted-foreground/50"
+          />
+          <div className="flex items-center justify-end gap-1.5">
+            {saved && <span className="text-[8px] text-emerald-500 font-medium">Saved!</span>}
+            <button
+              onClick={(e) => { e.stopPropagation(); setOpen(false); }}
+              className="text-[8px] px-2 py-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-accent/30 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleSave(); }}
+              disabled={saving || (pct === task.pct && !comment.trim())}
+              className="text-[8px] px-2.5 py-0.5 rounded font-semibold bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {saving ? "Saving..." : "Update"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function FeatureChartCard({ chart }: { chart: FeatureChartData }) {
   const [showLogs, setShowLogs] = useState(false);
   const [showTasks, setShowTasks] = useState(false);
@@ -1627,29 +1726,13 @@ function FeatureChartCard({ chart }: { chart: FeatureChartData }) {
             </span>
           </button>
           {showTasks && (
-            <div className="mt-1.5 space-y-1 max-h-[180px] overflow-y-auto">
+            <div className="mt-1.5 space-y-0.5 max-h-[280px] overflow-y-auto">
               {chart.tasks
                 .sort((a, b) => {
                   const ord: Record<string, number> = { "off-track": 0, "on-track": 1, "not-started": 2, "done": 3 };
                   return (ord[a.status] ?? 9) - (ord[b.status] ?? 9);
                 })
-                .map(t => {
-                  const cfg = TASK_STATUS_CFG[t.status];
-                  return (
-                    <div key={t.id} className="flex items-center gap-1.5 text-[9px] group">
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} title={cfg.label} />
-                      <span className="min-w-0 flex-1 truncate" title={t.name}>{t.name}</span>
-                      {t.assignee && <span className="text-[8px] text-muted-foreground/60 shrink-0">{t.assignee}</span>}
-                      <div className="w-10 h-1 rounded-full bg-muted overflow-hidden shrink-0">
-                        <div
-                          className={`h-full rounded-full ${t.status === "done" ? "bg-emerald-500" : t.status === "off-track" ? "bg-red-500" : t.status === "on-track" ? "bg-blue-500" : "bg-zinc-400"}`}
-                          style={{ width: `${Math.min(t.pct, 100)}%` }}
-                        />
-                      </div>
-                      <span className="w-7 text-right tabular-nums font-semibold shrink-0">{t.pct}%</span>
-                    </div>
-                  );
-                })}
+                .map(t => <QuickUpdateTaskRow key={t.id} task={t} totalFeaturePts={chart.totalPts} />)}
             </div>
           )}
         </div>
