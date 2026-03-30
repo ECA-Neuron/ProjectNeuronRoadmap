@@ -1,10 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { serializeForClient } from "@/lib/serialize";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { RoadmapTabs } from "./roadmap-tabs";
 
 export const dynamic = "force-dynamic";
 
 export default async function RoadmapPage() {
+  const session = await getServerSession(authOptions);
+  const currentUserName = session?.user?.name ?? "";
   let workstreams: any[] = [];
   let people: any[] = [];
   let progressLogs: any[] = [];
@@ -99,6 +103,7 @@ export default async function RoadmapPage() {
         people={serializeForClient(people) as any}
         progressLogs={serializeForClient(progressLogs) as any}
         dependencies={dependencies}
+        currentUserName={currentUserName}
       />
     </div>
   );

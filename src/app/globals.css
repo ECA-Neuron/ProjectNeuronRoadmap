@@ -77,4 +77,18 @@
   .scrollbar-none::-webkit-scrollbar {
     display: none;
   }
+  .scrollbar-hide-y::-webkit-scrollbar {
+    height: 6px;
+    width: 0;
+  }
+  .scrollbar-hide-y::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+  .scrollbar-hide-y::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.3);
+  }
+  .scrollbar-hide-y::-webkit-scrollbar-track {
+    background: transparent;
+  }
 }

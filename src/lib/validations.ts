@@ -30,6 +30,7 @@ export const subTaskSchema = z.object({
   unknowns: z.string().optional().nullable(),
   integration: z.string().optional().nullable(),
   assignedOrganization: z.enum(["ECLIPSE", "ACCENTURE"]).optional().nullable(),
+  assigneeId: z.string().optional().nullable(),
 });
 
 // ─── Workstream ────────────────────────────────

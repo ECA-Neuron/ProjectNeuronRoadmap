@@ -13,6 +13,7 @@ interface RoadmapTabsProps {
   people: any[];
   progressLogs: any[];
   dependencies: DepEdge[];
+  currentUserName?: string;
 }
 
 type ViewMode = "table" | "timeline" | "kanban";
@@ -35,7 +36,7 @@ const VIEW_TABS: { key: ViewMode; label: string; icon: React.ReactNode }[] = [
   },
 ];
 
-export function RoadmapTabs({ workstreams, people, progressLogs, dependencies }: RoadmapTabsProps) {
+export function RoadmapTabs({ workstreams, people, progressLogs, dependencies, currentUserName }: RoadmapTabsProps) {
   const [view, setView] = useState<ViewMode>("table");
   const [pulling, setPulling] = useState(false);
   const [pushing, setPushing] = useState(false);
@@ -159,7 +160,7 @@ export function RoadmapTabs({ workstreams, people, progressLogs, dependencies }:
         <RoadmapTable workstreams={workstreams} people={people} collapseSignal={collapseSignal} />
       )}
       {view === "timeline" && (
-        <RoadmapTimeline workstreams={workstreams} dependencies={dependencies} people={people} collapseSignal={collapseSignal} />
+        <RoadmapTimeline workstreams={workstreams} dependencies={dependencies} people={people} collapseSignal={collapseSignal} currentUserName={currentUserName} />
       )}
       {view === "kanban" && (
         <RoadmapKanban workstreams={workstreams} />

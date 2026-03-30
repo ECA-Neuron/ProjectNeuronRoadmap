@@ -86,11 +86,16 @@ const LEVEL_LABELS: Record<Level, string> = {
 };
 
 const ROW_H = 36;
-const HEADER_H = 52;
+const MONTH_ROW_H = 28;
+const TICK_ROW_H = 24;
+const HEADER_H = MONTH_ROW_H + TICK_ROW_H;
+const RESOURCE_H = 28;
 const LEFT_W = 340;
-const DAY_W = 3;
 const INDENT_PX = 24;
 const HANDLE_W = 10;
+
+type ZoomLevel = "day" | "week" | "month" | "year";
+const ZOOM_DAY_W: Record<ZoomLevel, number> = { day: 28, week: 12, month: 3, year: 0.8 };
 
 // ─── Data helpers ────────────────────────────────────
 
@@ -172,7 +177,7 @@ function addInit(rows: DisplayRow[], init: InitiativeRow, depth: number) {
   rows.push({ kind: "add", level: "Task", parentId: init.id, depth: depth + 1 });
 }
 
-function monthsBetween(startDay: number, endDay: number): { label: string; shortLabel: string; x: number; dayNum: number }[] {
+function monthsBetween(startDay: number, endDay: number, dayW: number): { label: string; shortLabel: string; x: number; dayNum: number }[] {
   const out: { label: string; shortLabel: string; x: number; dayNum: number }[] = [];
   const d = new Date(startDay * 86400000);
   d.setDate(1);
@@ -182,7 +187,7 @@ function monthsBetween(startDay: number, endDay: number): { label: string; short
       out.push({
         label: d.toLocaleDateString("en-US", { month: "long", year: "numeric" }),
         shortLabel: d.toLocaleDateString("en-US", { month: "short" }),
-        x: (dayNum - startDay) * DAY_W,
+        x: (dayNum - startDay) * dayW,
         dayNum,
       });
     }
@@ -191,17 +196,184 @@ function monthsBetween(startDay: number, endDay: number): { label: string; short
   return out;
 }
 
-function weekLinesBetween(startDay: number, endDay: number): number[] {
+function weekLinesBetween(startDay: number, endDay: number, dayW: number): number[] {
   const lines: number[] = [];
   const d = new Date(startDay * 86400000);
   const dow = d.getDay();
   const daysUntilMon = dow === 0 ? 1 : dow === 1 ? 0 : 8 - dow;
   d.setDate(d.getDate() + daysUntilMon);
   while (Math.floor(d.getTime() / 86400000) <= endDay) {
-    lines.push((Math.floor(d.getTime() / 86400000) - startDay) * DAY_W);
+    lines.push((Math.floor(d.getTime() / 86400000) - startDay) * dayW);
     d.setDate(d.getDate() + 7);
   }
   return lines;
+}
+
+function dayLinesBetween(startDay: number, endDay: number, dayW: number): { x: number; isWeekend: boolean }[] {
+  const lines: { x: number; isWeekend: boolean }[] = [];
+  for (let day = startDay; day <= endDay; day++) {
+    const dow = new Date(day * 86400000).getDay();
+    lines.push({ x: (day - startDay) * dayW, isWeekend: dow === 0 || dow === 6 });
+  }
+  return lines;
+}
+
+interface SubTick { x: number; width: number; label: string; isWeekend?: boolean }
+
+function buildSubTicks(startDay: number, endDay: number, dayW: number, zoom: ZoomLevel): SubTick[] {
+  const ticks: SubTick[] = [];
+  if (zoom === "day") {
+    for (let day = startDay; day <= endDay; day++) {
+      const d = new Date(day * 86400000);
+      const dow = d.getDay();
+      ticks.push({
+        x: (day - startDay) * dayW,
+        width: dayW,
+        label: `${d.getDate()}`,
+        isWeekend: dow === 0 || dow === 6,
+      });
+    }
+  } else if (zoom === "week") {
+    const d = new Date(startDay * 86400000);
+    const dow = d.getDay();
+    const daysUntilMon = dow === 0 ? 1 : dow === 1 ? 0 : 8 - dow;
+    let cur = startDay + daysUntilMon;
+    while (cur <= endDay) {
+      const dt = new Date(cur * 86400000);
+      const nextWeek = Math.min(cur + 7, endDay + 1);
+      ticks.push({
+        x: (cur - startDay) * dayW,
+        width: (nextWeek - cur) * dayW,
+        label: `${dt.toLocaleDateString("en-US", { month: "short" })} ${dt.getDate()}`,
+      });
+      cur += 7;
+    }
+  } else if (zoom === "month") {
+    const d = new Date(startDay * 86400000);
+    d.setDate(1);
+    while (Math.floor(d.getTime() / 86400000) <= endDay) {
+      const dayNum = Math.floor(d.getTime() / 86400000);
+      if (dayNum >= startDay) {
+        const next = new Date(d);
+        next.setMonth(next.getMonth() + 1);
+        const nextDayNum = Math.min(Math.floor(next.getTime() / 86400000), endDay + 1);
+        const weekCount = Math.round((nextDayNum - dayNum) / 7);
+        ticks.push({
+          x: (dayNum - startDay) * dayW,
+          width: (nextDayNum - dayNum) * dayW,
+          label: `${weekCount}w`,
+        });
+      }
+      d.setMonth(d.getMonth() + 1);
+    }
+  }
+  return ticks;
+}
+
+interface ResourceTask { name: string; endDate: string | null }
+interface ResourceBucket { x: number; width: number; count: number; label: string; tasks: ResourceTask[] }
+
+function buildResourceBuckets(
+  itemRows: (FlatRow & { kind: "item" })[],
+  minDay: number, maxDay: number, dayW: number, zoom: ZoomLevel,
+  filterAssign?: string
+): { buckets: ResourceBucket[]; max: number } {
+  const taskCountByDay = new Map<number, number>();
+  const taskInfoByDay = new Map<number, Map<string, ResourceTask>>();
+  for (const r of itemRows) {
+    if (r.level !== "Task") continue;
+    if (filterAssign && r.assign !== filterAssign) continue;
+    const s = toDay(r.startDate), e = toDay(r.endDate);
+    if (s === null || e === null) continue;
+    const task: ResourceTask = { name: r.name, endDate: r.endDate };
+    const clamped = Math.min(e - s, 730);
+    for (let d = 0; d <= clamped; d++) {
+      const day = s + d;
+      taskCountByDay.set(day, (taskCountByDay.get(day) || 0) + 1);
+      if (!taskInfoByDay.has(day)) taskInfoByDay.set(day, new Map());
+      taskInfoByDay.get(day)!.set(r.name, task);
+    }
+  }
+
+  const buckets: ResourceBucket[] = [];
+  let max = 0;
+
+  const collectTasks = (from: number, to: number): ResourceTask[] => {
+    const map = new Map<string, ResourceTask>();
+    for (let d = from; d <= to; d++) {
+      const s = taskInfoByDay.get(d);
+      if (s) s.forEach((t, key) => map.set(key, t));
+    }
+    return [...map.values()].sort((a, b) => {
+      const da = a.endDate ? new Date(a.endDate).getTime() : Infinity;
+      const db = b.endDate ? new Date(b.endDate).getTime() : Infinity;
+      return da - db;
+    });
+  };
+
+  if (zoom === "day") {
+    for (let day = minDay; day <= maxDay; day++) {
+      const count = taskCountByDay.get(day) || 0;
+      const x = (day - minDay) * dayW;
+      const w = dayW;
+      const label = dayToIso(day);
+      buckets.push({ x, width: w, count, label, tasks: collectTasks(day, day) });
+      max = Math.max(max, count);
+    }
+  } else if (zoom === "week") {
+    const d = new Date(minDay * 86400000);
+    const dow = d.getDay();
+    const daysUntilMon = dow === 0 ? 1 : dow === 1 ? 0 : 8 - dow;
+    d.setDate(d.getDate() + daysUntilMon);
+    let weekStart = Math.floor(d.getTime() / 86400000);
+    while (weekStart <= maxDay) {
+      let peak = 0;
+      for (let i = 0; i < 7; i++) peak = Math.max(peak, taskCountByDay.get(weekStart + i) || 0);
+      const x = (weekStart - minDay) * dayW;
+      const w = 7 * dayW;
+      const label = `Week of ${dayToIso(weekStart)}`;
+      buckets.push({ x, width: w, count: peak, label, tasks: collectTasks(weekStart, weekStart + 6) });
+      max = Math.max(max, peak);
+      weekStart += 7;
+    }
+  } else if (zoom === "month") {
+    const d = new Date(minDay * 86400000);
+    d.setDate(1);
+    while (Math.floor(d.getTime() / 86400000) <= maxDay) {
+      const mStart = Math.floor(d.getTime() / 86400000);
+      d.setMonth(d.getMonth() + 1);
+      const mEnd = Math.floor(d.getTime() / 86400000);
+      let total = 0, days = 0;
+      for (let day = Math.max(mStart, minDay); day < mEnd && day <= maxDay; day++) {
+        total += taskCountByDay.get(day) || 0; days++;
+      }
+      const avg = days > 0 ? Math.round(total / days) : 0;
+      const x = (Math.max(mStart, minDay) - minDay) * dayW;
+      const w = (Math.min(mEnd, maxDay) - Math.max(mStart, minDay)) * dayW;
+      const label = new Date(mStart * 86400000).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+      buckets.push({ x, width: w, count: avg, label, tasks: collectTasks(Math.max(mStart, minDay), Math.min(mEnd, maxDay)) });
+      max = Math.max(max, avg);
+    }
+  } else {
+    const d = new Date(minDay * 86400000);
+    d.setMonth(0, 1);
+    while (Math.floor(d.getTime() / 86400000) <= maxDay) {
+      const yStart = Math.floor(d.getTime() / 86400000);
+      d.setFullYear(d.getFullYear() + 1);
+      const yEnd = Math.floor(d.getTime() / 86400000);
+      let total = 0, days = 0;
+      for (let day = Math.max(yStart, minDay); day < yEnd && day <= maxDay; day++) {
+        total += taskCountByDay.get(day) || 0; days++;
+      }
+      const avg = days > 0 ? Math.round(total / days) : 0;
+      const x = (Math.max(yStart, minDay) - minDay) * dayW;
+      const w = (Math.min(yEnd, maxDay) - Math.max(yStart, minDay)) * dayW;
+      const label = `${new Date(yStart * 86400000).getFullYear()}`;
+      buckets.push({ x, width: w, count: avg, label, tasks: collectTasks(Math.max(yStart, minDay), Math.min(yEnd, maxDay)) });
+      max = Math.max(max, avg);
+    }
+  }
+  return { buckets, max: Math.max(max, 1) };
 }
 
 // ─── Hierarchy edges ─────────────────────────────────
@@ -508,9 +680,10 @@ interface ItemPopoverProps {
   onSaved: () => void; onCancel: () => void;
   dependencies: DepEdge[];
   allFeatures: { id: string; name: string }[];
+  people: PersonOption[];
 }
 
-function ItemPopover({ mode, anchorRect, onSaved, onCancel, dependencies, allFeatures }: ItemPopoverProps) {
+function ItemPopover({ mode, anchorRect, onSaved, onCancel, dependencies, allFeatures, people }: ItemPopoverProps) {
   const isEdit = mode.kind === "edit";
   const level = isEdit ? mode.item.level : mode.level;
 
@@ -520,6 +693,7 @@ function ItemPopover({ mode, anchorRect, onSaved, onCancel, dependencies, allFea
   const [endDate, setEndDate] = useState(isEdit ? isoFromDate(mode.item.endDate) : "");
   const [estimatedDays, setEstimatedDays] = useState("");
   const [riskLevel, setRiskLevel] = useState("Medium");
+  const [assigneeId, setAssigneeId] = useState("");
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -567,6 +741,7 @@ function ItemPopover({ mode, anchorRect, onSaved, onCancel, dependencies, allFea
           startDate: startDate || null, endDate: endDate || null,
           estimatedDays: mode.level === "Task" ? days : undefined,
           riskLevel: mode.level === "Task" ? riskLevel : undefined,
+          assigneeId: mode.level === "Task" && assigneeId ? assigneeId : undefined,
         });
       }
       onSaved();
@@ -574,7 +749,7 @@ function ItemPopover({ mode, anchorRect, onSaved, onCancel, dependencies, allFea
       console.error("Failed to save:", err);
       setSaving(false);
     }
-  }, [isEdit, mode, name, status, startDate, endDate, estimatedDays, riskLevel, saving, onSaved]);
+  }, [isEdit, mode, name, status, startDate, endDate, estimatedDays, riskLevel, assigneeId, saving, onSaved]);
 
   const handleDelete = useCallback(async () => {
     if (!isEdit || deleting) return;
@@ -640,18 +815,29 @@ function ItemPopover({ mode, anchorRect, onSaved, onCancel, dependencies, allFea
           </div>
         </div>
         {!isEdit && level === "Task" && (
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className={labelCls}>Est. Days</label>
-              <input type="number" min={0} step="0.5" value={estimatedDays} onChange={e => setEstimatedDays(e.target.value)} onKeyDown={onKey} placeholder="e.g. 2" className={fieldCls} disabled={saving} />
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={labelCls}>Est. Days</label>
+                <input type="number" min={0} step="0.5" value={estimatedDays} onChange={e => setEstimatedDays(e.target.value)} onKeyDown={onKey} placeholder="e.g. 2" className={fieldCls} disabled={saving} />
+              </div>
+              <div>
+                <label className={labelCls}>Risk</label>
+                <select value={riskLevel} onChange={e => setRiskLevel(e.target.value)} className={fieldCls} disabled={saving}>
+                  {TL_RISK.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                </select>
+              </div>
             </div>
-            <div>
-              <label className={labelCls}>Risk</label>
-              <select value={riskLevel} onChange={e => setRiskLevel(e.target.value)} className={fieldCls} disabled={saving}>
-                {TL_RISK.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-            </div>
-          </div>
+            {people.length > 0 && (
+              <div>
+                <label className={labelCls}>Assignee</label>
+                <select value={assigneeId} onChange={e => setAssigneeId(e.target.value)} className={fieldCls} disabled={saving}>
+                  <option value="">Unassigned</option>
+                  {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </div>
+            )}
+          </>
         )}
         <div className="flex items-center gap-2 pt-1">
           <button onClick={handleSave} disabled={!name.trim() || saving || deleting} className="flex-1 text-[11px] font-medium py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 transition-colors">
@@ -705,8 +891,8 @@ interface ResizeDrag {
 
 // ─── Main component ──────────────────────────────────
 
-export function RoadmapTimeline({ workstreams, dependencies = [], people = [], collapseSignal = 0 }: {
-  workstreams: WorkstreamRow[]; dependencies?: DepEdge[]; people?: PersonOption[]; collapseSignal?: number;
+export function RoadmapTimeline({ workstreams, dependencies = [], people = [], collapseSignal = 0, currentUserName }: {
+  workstreams: WorkstreamRow[]; dependencies?: DepEdge[]; people?: PersonOption[]; collapseSignal?: number; currentUserName?: string;
 }) {
   const allRows = useMemo(() => buildDisplayRows(workstreams), [workstreams]);
   const allFeatures = useMemo(() => {
@@ -722,6 +908,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showDeps, setShowDeps] = useState(true);
+  const [zoom, setZoom] = useState<ZoomLevel>("month");
+  const DAY_W = ZOOM_DAY_W[zoom];
 
   const collapsibleIds = useMemo(() => allRows.filter(r => r.kind === "item" && r.childCount > 0).map(r => (r as FlatRow & { kind: "item" }).id), [allRows]);
 
@@ -743,6 +931,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
   const router = useRouter();
 
   const [resizeDrag, setResizeDrag] = useState<ResizeDrag | null>(null);
+  const [hoveredBucket, setHoveredBucket] = useState<{ bucket: ResourceBucket; rect: DOMRect } | null>(null);
+  const [pinnedBucket, setPinnedBucket] = useState<{ bucket: ResourceBucket; rect: DOMRect } | null>(null);
   const [optimisticDates, setOptimisticDates] = useState<Map<string, { startDate: string; endDate: string }>>(new Map());
   const [itemPopover, setItemPopover] = useState<{
     mode: PopoverMode; anchorRect: { top: number; left: number };
@@ -816,23 +1006,30 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
   }, [allRows, collapsed]);
 
   const itemRows = useMemo(() => visible.filter((r): r is FlatRow & { kind: "item" } => r.kind === "item"), [visible]);
+  const allItemRows = useMemo(() => allRows.filter((r): r is FlatRow & { kind: "item" } => r.kind === "item"), [allRows]);
   const hierarchyEdges = useMemo(() => buildHierarchyEdges(visible), [visible]);
 
   const { minDay, maxDay } = useMemo(() => {
     let mn = Infinity, mx = -Infinity;
-    for (const r of itemRows) {
+    for (const r of allItemRows) {
       const s = toDay(r.startDate), e = toDay(r.endDate);
       if (s !== null) { mn = Math.min(mn, s); mx = Math.max(mx, s); }
       if (e !== null) { mn = Math.min(mn, e); mx = Math.max(mx, e); }
     }
     if (mn === Infinity) { const today = Math.floor(Date.now() / 86400000); mn = today - 30; mx = today + 180; }
     return { minDay: mn - 14, maxDay: mx + 30 };
-  }, [itemRows]);
+  }, [allItemRows]);
 
   const totalWidth = (maxDay - minDay) * DAY_W;
-  const months = useMemo(() => monthsBetween(minDay, maxDay), [minDay, maxDay]);
-  const weekLines = useMemo(() => weekLinesBetween(minDay, maxDay), [minDay, maxDay]);
+  const months = useMemo(() => monthsBetween(minDay, maxDay, DAY_W), [minDay, maxDay, DAY_W]);
+  const weekLines = useMemo(() => weekLinesBetween(minDay, maxDay, DAY_W), [minDay, maxDay, DAY_W]);
+  const dayLines = useMemo(() => zoom === "day" ? dayLinesBetween(minDay, maxDay, DAY_W) : [], [minDay, maxDay, DAY_W, zoom]);
+  const subTicks = useMemo(() => buildSubTicks(minDay, maxDay, DAY_W, zoom), [minDay, maxDay, DAY_W, zoom]);
   const todayX = (Math.floor(Date.now() / 86400000) - minDay) * DAY_W;
+  const { buckets: resourceBuckets, max: resourceMax } = useMemo(
+    () => buildResourceBuckets(allItemRows, minDay, maxDay, DAY_W, zoom, currentUserName || undefined),
+    [allItemRows, minDay, maxDay, DAY_W, zoom, currentUserName]
+  );
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollLeft = Math.max(0, todayX - 300);
@@ -857,9 +1054,9 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
     const endX = ed !== null ? (ed - minDay) * DAY_W : (sd! - minDay) * DAY_W + 20;
     const barW = Math.max(endX - startX, 4);
     const barH = LEVEL_BAR_HEIGHTS[row.level];
-    const y = HEADER_H + vi * ROW_H + (ROW_H - barH) / 2;
+    const y = HEADER_H + RESOURCE_H + vi * ROW_H + (ROW_H - barH) / 2;
     return { startX, endX, barW, barH, y, sd, ed };
-  }, [minDay, resizeDrag, optimisticDates]);
+  }, [minDay, resizeDrag, optimisticDates, DAY_W]);
 
   // ─── Mouse handlers ─────────────────────────────────
 
@@ -872,7 +1069,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
 
   const handleGanttMouseDown = useCallback((e: React.MouseEvent) => {
     const { x, y } = getMousePos(e);
-    const rowIdx = Math.floor((y - HEADER_H) / ROW_H);
+    const rowIdx = Math.floor((y - HEADER_H - RESOURCE_H) / ROW_H);
     if (rowIdx < 0 || rowIdx >= visible.length) return;
     const row = visible[rowIdx];
 
@@ -932,7 +1129,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
       }
     }
 
-  }, [visible, getMousePos, getBarGeom, minDay]);
+  }, [visible, getMousePos, getBarGeom, minDay, DAY_W]);
 
   const handleGanttMouseMove = useCallback((e: React.MouseEvent) => {
     const { x } = getMousePos(e);
@@ -989,17 +1186,47 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
     const row = visible[resizeDrag.vi];
     if (row.kind !== "item") return null;
     const barH = LEVEL_BAR_HEIGHTS[row.level];
-    const y = HEADER_H + resizeDrag.vi * ROW_H + (ROW_H - barH) / 2 - 18;
+    const y = HEADER_H + RESOURCE_H + resizeDrag.vi * ROW_H + (ROW_H - barH) / 2 - 18;
     const leftX = (sd - minDay) * DAY_W;
     return { x: leftX, y, label: `${fmtShort(sd)} — ${fmtShort(ed)}` };
   })();
 
   const contentH = visible.length * ROW_H;
-  const svgH = HEADER_H + contentH;
+  const svgH = HEADER_H + RESOURCE_H + contentH;
 
   return (
-    <div className="border border-border/30 rounded-xl overflow-hidden bg-card flex" style={{ height: `${Math.min(contentH + HEADER_H, 760)}px` }}>
+    <div className="border border-border/30 rounded-xl overflow-hidden bg-card flex flex-col" style={{ height: "calc(100vh - 200px)", minHeight: 400 }}>
 
+      {/* ── Zoom + Deps toolbar ── */}
+      <div className="shrink-0 border-b border-border/20 px-4 py-2 flex items-center gap-3 bg-card">
+        <div className="flex items-center gap-1 rounded-lg bg-muted/30 p-0.5">
+          {(["day", "week", "month", "year"] as ZoomLevel[]).map(z => (
+            <button
+              key={z}
+              onClick={() => setZoom(z)}
+              className={`px-3 py-1 rounded-md text-[10px] font-medium transition-colors capitalize ${
+                zoom === z ? "bg-blue-600 text-white shadow-sm" : "text-muted-foreground hover:text-foreground hover:bg-accent/40"
+              }`}
+            >{z}</button>
+          ))}
+        </div>
+        {dependencies.length > 0 && (
+          <button
+            onClick={() => setShowDeps(d => !d)}
+            className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md transition-colors ${
+              showDeps
+                ? "bg-orange-500/10 text-orange-500"
+                : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent/30"
+            }`}
+            title={showDeps ? "Hide dependencies" : "Show dependencies"}
+          >
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" /></svg>
+            Deps
+          </button>
+        )}
+      </div>
+
+      <div className="flex flex-1 min-h-0">
       {/* ── Left hierarchy panel ── */}
       <div
         ref={leftRef}
@@ -1008,24 +1235,19 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
       >
         {/* Header */}
         <div
-          className="sticky top-0 z-10 bg-card border-b border-border/20 px-4 flex items-center justify-between shrink-0"
+          className="sticky top-0 z-10 bg-card border-b border-border/20 px-4 flex items-center shrink-0"
           style={{ height: HEADER_H }}
         >
           <span className="text-[11px] text-muted-foreground font-medium tracking-wide">Name</span>
-          {dependencies.length > 0 && (
-            <button
-              onClick={() => setShowDeps(d => !d)}
-              className={`flex items-center gap-1 text-[10px] font-medium px-2 py-1 rounded-md transition-colors ${
-                showDeps
-                  ? "bg-orange-500/10 text-orange-500"
-                  : "text-muted-foreground/50 hover:text-muted-foreground hover:bg-accent/30"
-              }`}
-              title={showDeps ? "Hide dependencies" : "Show dependencies"}
-            >
-              <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 0 1 1.242 7.244l-4.5 4.5a4.5 4.5 0 0 1-6.364-6.364l1.757-1.757m13.35-.622 1.757-1.757a4.5 4.5 0 0 0-6.364-6.364l-4.5 4.5a4.5 4.5 0 0 0 1.242 7.244" /></svg>
-              Deps
-            </button>
-          )}
+        </div>
+        {/* Resource row label */}
+        <div
+          className="shrink-0 border-b border-border/20 px-4 flex items-center bg-muted/10"
+          style={{ height: RESOURCE_H }}
+        >
+          <span className="text-[9px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+            {currentUserName ? "My Load" : "Workload"}
+          </span>
         </div>
 
         {/* Rows */}
@@ -1120,44 +1342,96 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
       </div>
 
       {/* ── Right scrollable Gantt ── */}
-      <div className="flex-1 overflow-auto" ref={scrollRef} onScroll={handleGanttScroll}>
+      <div className="flex-1 overflow-x-auto overflow-y-auto scrollbar-hide-y" ref={scrollRef} onScroll={handleGanttScroll}>
         <div
           ref={ganttRef}
-          style={{ width: totalWidth, minHeight: "100%", cursor: resizeDrag ? (resizeDrag.edge === "move" ? "grabbing" : "col-resize") : undefined }}
+          style={{ width: totalWidth, height: svgH, cursor: resizeDrag ? (resizeDrag.edge === "move" ? "grabbing" : "col-resize") : undefined }}
           className="relative select-none"
           onMouseDown={handleGanttMouseDown}
           onMouseMove={handleGanttMouseMove}
           onMouseUp={handleGanttMouseUp}
           onMouseLeave={handleGanttMouseLeave}
         >
-          {/* ── Header: months ── */}
+          {/* ── Header: month row + tick row ── */}
           <div className="sticky top-0 z-10 border-b border-border/20 bg-card" style={{ height: HEADER_H, width: totalWidth }}>
-            {/* Month labels */}
+            {/* Month labels row */}
             {months.map((m, i) => {
               const nextX = i < months.length - 1 ? months[i + 1].x : totalWidth;
               const width = nextX - m.x;
               return (
                 <div
                   key={i}
-                  className="absolute flex items-end pb-2 pl-3"
-                  style={{ left: m.x, width, height: HEADER_H }}
+                  className="absolute flex items-center pl-3"
+                  style={{ left: m.x, width, top: 0, height: MONTH_ROW_H }}
                 >
-                  <span className="text-[11px] font-medium text-muted-foreground/70 leading-none">{m.label}</span>
+                  <span className={`font-medium text-muted-foreground/70 leading-none ${zoom === "day" || zoom === "week" ? "text-[10px]" : "text-[11px]"}`}>
+                    {zoom === "year" ? m.shortLabel : m.label}
+                  </span>
                 </div>
               );
             })}
-            {/* Month dividers in header */}
             {months.map((m, i) => i > 0 && (
-              <div key={`hd-${i}`} className="absolute top-3 bottom-0 w-px bg-border/15" style={{ left: m.x }} />
+              <div key={`hd-${i}`} className="absolute w-px bg-border/15" style={{ left: m.x, top: 4, bottom: 0 }} />
             ))}
+            {/* Sub-tick labels row */}
+            {subTicks.map((t, i) => (
+              <div
+                key={`st-${i}`}
+                className={`absolute flex items-center justify-center border-r border-border/[0.06] ${
+                  t.isWeekend ? "bg-muted/20" : ""
+                }`}
+                style={{ left: t.x, width: t.width, top: MONTH_ROW_H, height: TICK_ROW_H }}
+              >
+                <span className={`text-[9px] leading-none ${
+                  t.isWeekend ? "text-muted-foreground/30" : "text-muted-foreground/50"
+                }`}>{t.label}</span>
+              </div>
+            ))}
+            {/* Today pill inside the sticky header */}
+            <div className="absolute z-20 pointer-events-none" style={{ left: todayX, top: 0, bottom: 0 }}>
+              <div className="absolute top-0 bottom-0 w-px bg-blue-500/40" />
+              <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[8px] px-2 py-[2px] rounded-full font-semibold tracking-wide whitespace-nowrap">
+                Today
+              </div>
+            </div>
           </div>
 
-          {/* ── Grid: month + week lines ── */}
+          {/* ── Resource allocation heatmap ── */}
+          <div className="sticky z-[9] relative border-b-2 border-border/20 bg-card" style={{ top: HEADER_H, height: RESOURCE_H, width: totalWidth }}>
+            {resourceBuckets.map((b, i) => {
+              const intensity = b.count / resourceMax;
+              const hue = intensity > 0.7 ? 0 : intensity > 0.4 ? 35 : 142;
+              const alpha = b.count > 0 ? Math.max(0.1, intensity * 0.65) : 0;
+              return (
+                <div
+                  key={i}
+                  className="absolute top-0 bottom-0 flex items-center justify-center transition-colors border-r border-border/[0.06] cursor-default"
+                  style={{
+                    left: b.x, width: Math.max(b.width, 1),
+                    background: b.count > 0 ? `hsla(${hue}, 75%, 55%, ${alpha})` : "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (b.tasks.length > 0 && !pinnedBucket) setHoveredBucket({ bucket: b, rect: e.currentTarget.getBoundingClientRect() });
+                  }}
+                  onMouseLeave={() => { if (!pinnedBucket) setHoveredBucket(null); }}
+                >
+                  {b.count > 0 && b.width > 14 && (
+                    <span className="text-[8px] font-bold text-white/80 pointer-events-none">{b.count}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* ── Grid: month + week + day lines ── */}
           {months.map((m, i) => i > 0 && (
-            <div key={`ml-${i}`} className="absolute bottom-0 w-px bg-border/10" style={{ left: m.x, top: HEADER_H }} />
+            <div key={`ml-${i}`} className="absolute bottom-0 w-px bg-border/10" style={{ left: m.x, top: HEADER_H + RESOURCE_H }} />
           ))}
-          {weekLines.map((wx, i) => (
-            <div key={`wl-${i}`} className="absolute bottom-0 w-px bg-border/[0.04]" style={{ left: wx, top: HEADER_H }} />
+          {zoom !== "day" && weekLines.map((wx, i) => (
+            <div key={`wl-${i}`} className="absolute bottom-0 w-px bg-border/[0.04]" style={{ left: wx, top: HEADER_H + RESOURCE_H }} />
+          ))}
+          {zoom === "day" && dayLines.map((dl, i) => (
+            <div key={`dl-${i}`} className={`absolute bottom-0 w-px ${dl.isWeekend ? "bg-border/10" : "bg-border/[0.04]"}`} style={{ left: dl.x, top: HEADER_H + RESOURCE_H }} />
           ))}
 
           {/* ── Row backgrounds + dividers ── */}
@@ -1171,18 +1445,13 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
                   ${isSelected ? "bg-blue-500/[0.04] border-border/10" : ""}
                   ${isWs ? "bg-muted/[0.04] border-border/10" : "border-border/[0.04]"}
                 `}
-                style={{ top: HEADER_H + vi * ROW_H, height: ROW_H }}
+                style={{ top: HEADER_H + RESOURCE_H + vi * ROW_H, height: ROW_H }}
               />
             );
           })}
 
-          {/* ── Today indicator ── */}
-          <div className="absolute top-0 bottom-0 z-20 pointer-events-none" style={{ left: todayX }}>
-            <div className="absolute top-0 bottom-0 w-px bg-blue-500/30" />
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 bg-blue-600 text-white text-[8px] px-2 py-[3px] rounded-full font-semibold tracking-wide whitespace-nowrap">
-              Today
-            </div>
-          </div>
+          {/* ── Today vertical line (content area only) ── */}
+          <div className="absolute bottom-0 z-[2] pointer-events-none w-px bg-blue-500/30" style={{ left: todayX, top: HEADER_H + RESOURCE_H }} />
 
           {/* ── SVG: hierarchy lines (behind bars) ── */}
           <svg className="absolute top-0 left-0 pointer-events-none z-[1]" width={totalWidth} height={svgH}>
@@ -1193,8 +1462,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
 
               const pGeom = getBarGeom(parentRow, edge.parentVi);
               const cGeom = getBarGeom(childRow, edge.childVi);
-              const parentMidY = HEADER_H + edge.parentVi * ROW_H + ROW_H / 2;
-              const childMidY = HEADER_H + edge.childVi * ROW_H + ROW_H / 2;
+              const parentMidY = HEADER_H + RESOURCE_H + edge.parentVi * ROW_H + ROW_H / 2;
+              const childMidY = HEADER_H + RESOURCE_H + edge.childVi * ROW_H + ROW_H / 2;
 
               let anchorX: number;
               if (pGeom) anchorX = pGeom.startX;
@@ -1349,8 +1618,8 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
                   const fromGeom = getBarGeom(fromRow, fromVi);
                   const toGeom = getBarGeom(toRow, toVi);
 
-                  const fromY = HEADER_H + fromVi * ROW_H + ROW_H / 2;
-                  const toY = HEADER_H + toVi * ROW_H + ROW_H / 2;
+                  const fromY = HEADER_H + RESOURCE_H + fromVi * ROW_H + ROW_H / 2;
+                  const toY = HEADER_H + RESOURCE_H + toVi * ROW_H + ROW_H / 2;
 
                   const fromEndX = fromGeom ? fromGeom.endX : 40;
                   const toStartX = toGeom ? toGeom.startX : 40;
@@ -1380,6 +1649,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
           {/* Add items via left panel buttons */}
         </div>
       </div>
+      </div>{/* end flex wrapper */}
 
       {/* ── Item popover (fixed) ── */}
       {itemPopover && (
@@ -1392,6 +1662,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
             onCancel={handleItemPopoverCancel}
             dependencies={dependencies}
             allFeatures={allFeatures}
+            people={people}
           />
         </>
       )}
@@ -1405,6 +1676,83 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
           onRefresh={handleContextMenuRefresh}
         />
       )}
+
+      {/* Resource bucket tooltip (hover or pinned) */}
+      {(() => {
+        const active = pinnedBucket || hoveredBucket;
+        if (!active) return null;
+        const { bucket, rect } = active;
+        const isPinned = !!pinnedBucket;
+        const maxShow = 10;
+        const shown = bucket.tasks.slice(0, maxShow);
+        const overflow = bucket.tasks.length - maxShow;
+        const fmtDate = (d: string | null) => {
+          if (!d) return "No date";
+          const dt = new Date(d);
+          return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        };
+        return (
+          <div
+            className="fixed z-50 animate-in fade-in-0 zoom-in-95 duration-100"
+            style={{ left: rect.left + rect.width / 2, top: rect.bottom + 6, transform: "translateX(-50%)" }}
+            onMouseEnter={() => { /* keep tooltip alive while cursor is inside */ }}
+            onMouseLeave={() => { if (!isPinned) setHoveredBucket(null); }}
+          >
+            <div className="bg-popover border border-border/40 rounded-lg shadow-xl px-3 py-2.5 min-w-[220px] max-w-[340px]">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] font-semibold text-muted-foreground/60 uppercase tracking-wider">
+                  {bucket.label} &middot; {bucket.tasks.length} task{bucket.tasks.length !== 1 ? "s" : ""}
+                </div>
+                <div className="flex items-center gap-1 ml-2">
+                  {!isPinned ? (
+                    <button
+                      onClick={() => { setPinnedBucket(active); setHoveredBucket(null); }}
+                      className="text-muted-foreground/30 hover:text-blue-400 transition-colors p-0.5 rounded hover:bg-accent/30"
+                      title="Pin this tooltip"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="m18.375 12.739-7.693 7.693a4.5 4.5 0 0 1-6.364-6.364l10.94-10.94A3 3 0 1 1 19.5 7.372L8.552 18.32m.009-.01-.01.01m5.699-9.941-7.81 7.81a1.5 1.5 0 0 0 2.112 2.13" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => { setPinnedBucket(null); setHoveredBucket(null); }}
+                      className="text-muted-foreground/40 hover:text-foreground transition-colors p-0.5 rounded hover:bg-accent/30"
+                      title="Close"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                {shown.map((task, i) => {
+                  const endDay = task.endDate ? new Date(task.endDate) : null;
+                  const isOverdue = endDay ? endDay.getTime() < Date.now() : false;
+                  return (
+                    <div key={i} className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-1.5 min-w-0">
+                        <span className="mt-[5px] w-1.5 h-1.5 rounded-full bg-blue-500/60 shrink-0" />
+                        <span className="text-[11px] text-foreground/80 leading-snug truncate">{task.name}</span>
+                      </div>
+                      <span className={`text-[10px] whitespace-nowrap shrink-0 ${
+                        isOverdue ? "text-red-400" : "text-muted-foreground/50"
+                      }`}>
+                        {fmtDate(task.endDate)}
+                      </span>
+                    </div>
+                  );
+                })}
+                {overflow > 0 && (
+                  <div className="text-[10px] text-muted-foreground/50 pl-3">+{overflow} more</div>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

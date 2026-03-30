@@ -717,7 +717,7 @@ export default function WorkstreamView({
                           ❓ Rubric
                         </Link>
                       </div>
-                      {canEdit && <AddSubTaskButton initiativeId={init.id} onDone={refresh} />}
+                      {canEdit && <AddSubTaskButton initiativeId={init.id} onDone={refresh} people={people} />}
                     </div>
 
                     {init.subTasks.length === 0 && (
@@ -1232,9 +1232,10 @@ const SubTaskRow = memo(function SubTaskRow({ subTask: st, people, onUpdate, tra
 
 /* ─── Add Sub-Task Button ──────────────────────────────── */
 
-function AddSubTaskButton({ initiativeId, onDone }: { initiativeId: string; onDone: () => void }) {
+function AddSubTaskButton({ initiativeId, onDone, people }: { initiativeId: string; onDone: () => void; people: Person[] }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
   const [isPending, startTransition] = useTransition();
 
   if (!open) {
@@ -1254,6 +1255,16 @@ function AddSubTaskButton({ initiativeId, onDone }: { initiativeId: string; onDo
         onChange={(e) => setName(e.target.value)}
         autoFocus
       />
+      {people.length > 0 && (
+        <select
+          className="h-6 text-[10px] bg-background border border-border rounded px-1 text-foreground"
+          value={assigneeId}
+          onChange={(e) => setAssigneeId(e.target.value)}
+        >
+          <option value="">Unassigned</option>
+          {people.map(p => <option key={p.id} value={p.id}>{p.initials || p.name}</option>)}
+        </select>
+      )}
       <Button
         size="sm"
         className="h-6 text-[10px]"
@@ -1264,8 +1275,10 @@ function AddSubTaskButton({ initiativeId, onDone }: { initiativeId: string; onDo
               initiativeId,
               name: name.trim(),
               points: 0,
+              ...(assigneeId ? { assigneeId } : {}),
             });
             setName("");
+            setAssigneeId("");
             setOpen(false);
             onDone();
           });

@@ -33,6 +33,7 @@ export async function createSubTask(data: unknown) {
       ...(typeof parsed.assignedOrganization !== "undefined" && {
         assignedOrganization: parsed.assignedOrganization ?? null,
       }),
+      ...(parsed.assigneeId ? { assigneeId: parsed.assigneeId } : {}),
     } as Parameters<typeof prisma.subTask.create>[0]["data"],
   });
   revalidatePath("/workstreams");
