@@ -37,7 +37,7 @@ interface Workstream {
 
 interface OpenIssue {
   id: string; title: string; severity: string; createdAt: string;
-  workstream: { id: string; name: string };
+  workstream: { id: string; name: string } | null;
 }
 
 interface LogEntry {
@@ -162,7 +162,7 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
       const totalPts = tasks.reduce((s, t) => s + (t.points || 0), 0);
       const donePts = tasks.filter(t => statusNorm(t.status) === "DONE").reduce((s, t) => s + (t.points || 0), 0);
       const pct = totalPts > 0 ? Math.round((donePts / totalPts) * 100) : 0;
-      const issues = openIssues.filter(i => i.workstream.id === ws.id).length;
+      const issues = openIssues.filter(i => i.workstream?.id === ws.id).length;
       return { id: ws.id, name: ws.name, color: ws.color, total, done, totalPts, donePts, pct, issues };
     });
   }, [workstreams, openIssues]);
@@ -517,7 +517,7 @@ export function OverviewDashboard({ workstreams, openIssues, recentLogs, progres
                 </span>
                 <div className="flex-1 min-w-0">
                   <p className="text-[13px] truncate font-medium">{issue.title}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">{issue.workstream.name}</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{issue.workstream?.name ?? "Unassigned"}</p>
                 </div>
               </div>
             ))}
