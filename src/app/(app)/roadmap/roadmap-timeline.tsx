@@ -155,7 +155,17 @@ function buildDisplayRows(workstreams: WorkstreamRow[]): DisplayRow[] {
 }
 
 function addInit(rows: DisplayRow[], init: InitiativeRow, depth: number) {
-  rows.push({ kind: "item", id: init.id, name: init.name, level: "Feature", status: init.status, startDate: init.startDate, endDate: init.endDate, assign: init.ownerInitials, depth, childCount: init.subTasks.length, color: LEVEL_COLORS.Feature, pct: computeFeaturePct(init), initiativeId: init.id });
+  let featureStart = init.startDate;
+  let featureEnd = init.endDate;
+  for (const sub of init.subTasks) {
+    if (sub.startDate) {
+      if (!featureStart || sub.startDate < featureStart) featureStart = sub.startDate;
+    }
+    if (sub.endDate) {
+      if (!featureEnd || sub.endDate > featureEnd) featureEnd = sub.endDate;
+    }
+  }
+  rows.push({ kind: "item", id: init.id, name: init.name, level: "Feature", status: init.status, startDate: featureStart, endDate: featureEnd, assign: init.ownerInitials, depth, childCount: init.subTasks.length, color: LEVEL_COLORS.Feature, pct: computeFeaturePct(init), initiativeId: init.id });
   for (const sub of init.subTasks) {
     rows.push({ kind: "item", id: sub.id, name: sub.name, level: "Task", status: sub.status, startDate: sub.startDate, endDate: sub.endDate, assign: sub.assignee?.name ?? null, depth: depth + 1, childCount: 0, color: LEVEL_COLORS.Task, pct: sub.completionPercent ?? 0, initiativeId: init.id });
   }
@@ -892,10 +902,22 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
             return;
           }
         }
+      } else if (!row.startDate && !row.endDate) {
+        e.preventDefault();
+        const clickDay = Math.round(x / DAY_W) + minDay;
+        const newStart = clickDay - 3;
+        const newEnd = clickDay + 4;
+        const startIso = dayToIso(newStart), endIso = dayToIso(newEnd);
+        setOptimisticDates(prev => {
+          const next = new Map(prev);
+          next.set(row.id, { startDate: startIso, endDate: endIso });
+          return next;
+        });
+        setResizeDrag({ vi: rowIdx, id: row.id, level: row.level, edge: "right", origStartDay: newStart, origEndDay: newEnd, anchorX: x, currentX: x });
       }
     }
 
-  }, [visible, getMousePos, getBarGeom]);
+  }, [visible, getMousePos, getBarGeom, minDay]);
 
   const handleGanttMouseMove = useCallback((e: React.MouseEvent) => {
     const { x } = getMousePos(e);
