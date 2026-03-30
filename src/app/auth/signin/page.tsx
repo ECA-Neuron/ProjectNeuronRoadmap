@@ -10,11 +10,11 @@ export default function SignInPage() {
 
   const handleNotionSignIn = () => {
     setLoading(true);
-    signIn("notion", { callbackUrl: "/roadmap" });
+    signIn("notion", { callbackUrl: "/my-dashboard" });
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30">
+    <div className="flex min-h-screen items-center justify-center bg-background">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="text-4xl mb-2">🧠</div>
