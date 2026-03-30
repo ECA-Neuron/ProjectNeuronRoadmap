@@ -1257,6 +1257,12 @@ interface MiniBurnPoint {
   dayLogs: DayLog[];
 }
 
+interface TaskSummary {
+  id: string; name: string; pct: number; points: number;
+  status: "done" | "on-track" | "off-track" | "not-started";
+  assignee: string | null;
+}
+
 interface FeatureChartData {
   id: string; name: string; wsName: string;
   totalPts: number; burntPts: number; pct: number;
@@ -1265,6 +1271,7 @@ interface FeatureChartData {
   data: MiniBurnPoint[];
   deadlineLabel: string | null;
   projectedLabel: string | null;
+  tasks: TaskSummary[];
 }
 
 function buildFeatureChart(feature: Feature, logs: ProgressLog[]): FeatureChartData {
@@ -1280,8 +1287,35 @@ function buildFeatureChart(feature: Feature, logs: ProgressLog[]): FeatureChartD
   const featureLogs = logs.filter(l => l.initiativeId === feature.id || feature.subTasks.some(t => t.id === l.subTaskId));
   const dated = featureLogs.filter(l => l.logDate).sort((a, b) => String(a.logDate!).localeCompare(String(b.logDate!)));
 
+  const buildTasks = (): TaskSummary[] => {
+    const now = new Date().toISOString().slice(0, 10);
+    return feature.subTasks.map(t => {
+      const tPct = t.completionPercent;
+      let tStatus: TaskSummary["status"];
+      if (tPct >= 100) {
+        tStatus = "done";
+      } else if (tPct === 0) {
+        tStatus = "not-started";
+      } else {
+        const tEnd = t.endDate?.slice(0, 10) ?? ed;
+        if (tEnd && tEnd < now) {
+          tStatus = "off-track";
+        } else if (tEnd) {
+          const tStart = t.startDate?.slice(0, 10) ?? sd ?? now;
+          const totalSpan = Math.max(daysBetween(tStart, tEnd), 1);
+          const elapsed = Math.max(daysBetween(tStart, now), 0);
+          const expectedPct = Math.min((elapsed / totalSpan) * 100, 100);
+          tStatus = tPct >= expectedPct * 0.85 ? "on-track" : "off-track";
+        } else {
+          tStatus = "on-track";
+        }
+      }
+      return { id: t.id, name: t.name, pct: tPct, points: t.points, status: tStatus, assignee: t.assignee?.initials ?? t.assignee?.name ?? null };
+    });
+  };
+
   if (totalPts === 0) {
-    return { id: feature.id, name: feature.name, wsName, totalPts, burntPts, pct, status: "no-data", velocity: 0, estCompletion: null, daysOff: 0, data: [], deadlineLabel: null, projectedLabel: null };
+    return { id: feature.id, name: feature.name, wsName, totalPts, burntPts, pct, status: "no-data", velocity: 0, estCompletion: null, daysOff: 0, data: [], deadlineLabel: null, projectedLabel: null, tasks: buildTasks() };
   }
 
   const logsByDay = new Map<string, DayLog[]>();
@@ -1353,7 +1387,7 @@ function buildFeatureChart(feature: Feature, logs: ProgressLog[]): FeatureChartD
   const cur = new Date(rangeStart + "T12:00:00Z");
   const endD = new Date(rangeEnd + "T12:00:00Z");
   while (cur <= endD) { allDays.push(cur.toISOString().slice(0, 10)); cur.setUTCDate(cur.getUTCDate() + 1); }
-  if (allDays.length === 0) return { id: feature.id, name: feature.name, wsName, totalPts, burntPts, pct, status: "no-data", velocity: 0, estCompletion: null, daysOff: 0, data: [], deadlineLabel: null, projectedLabel: null };
+  if (allDays.length === 0) return { id: feature.id, name: feature.name, wsName, totalPts, burntPts, pct, status: "no-data", velocity: 0, estCompletion: null, daysOff: 0, data: [], deadlineLabel: null, projectedLabel: null, tasks: buildTasks() };
 
   const todayIdx = allDays.findIndex(d => d >= today);
   const effectiveTodayIdx = todayIdx >= 0 ? todayIdx : allDays.length - 1;
@@ -1405,7 +1439,7 @@ function buildFeatureChart(feature: Feature, logs: ProgressLog[]): FeatureChartD
   const deadlineLabel = deadlineDate ? fmtLabel(deadlineDate) : null;
   const projectedLabel = estCompletion ? fmtLabel(estCompletion) : null;
 
-  return { id: feature.id, name: feature.name, wsName, totalPts, burntPts, pct, status, velocity, estCompletion, daysOff, data: points, deadlineLabel, projectedLabel };
+  return { id: feature.id, name: feature.name, wsName, totalPts, burntPts, pct, status, velocity, estCompletion, daysOff, data: points, deadlineLabel, projectedLabel, tasks: buildTasks() };
 }
 
 const TRACK_BADGE: Record<string, { label: string; cls: string }> = {
@@ -1453,8 +1487,16 @@ function MiniActualDot(props: any) {
   return <circle cx={cx} cy={cy} r={1} fill="#f97316" stroke="none" />;
 }
 
+const TASK_STATUS_CFG: Record<TaskSummary["status"], { dot: string; label: string }> = {
+  "done": { dot: "bg-emerald-500", label: "Done" },
+  "on-track": { dot: "bg-blue-500", label: "On Track" },
+  "off-track": { dot: "bg-red-500", label: "Off Track" },
+  "not-started": { dot: "bg-zinc-400", label: "Not Started" },
+};
+
 function FeatureChartCard({ chart }: { chart: FeatureChartData }) {
   const [showLogs, setShowLogs] = useState(false);
+  const [showTasks, setShowTasks] = useState(false);
   const badge = TRACK_BADGE[chart.status];
   const hasIdeal = chart.data.some(d => d.ideal > 0);
 
@@ -1567,6 +1609,47 @@ function FeatureChartCard({ chart }: { chart: FeatureChartData }) {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {chart.tasks.length > 0 && (
+        <div className="border-t border-border/30 pt-1.5 mt-1">
+          <button onClick={() => setShowTasks(v => !v)} className="w-full flex items-center justify-between text-[9px] font-medium text-muted-foreground hover:text-foreground transition-colors">
+            <span className="flex items-center gap-1">
+              <svg className={`w-2.5 h-2.5 transition-transform ${showTasks ? "rotate-90" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>
+              Tasks ({chart.tasks.length})
+            </span>
+            <span className="flex items-center gap-1.5 tabular-nums">
+              {chart.tasks.filter(t => t.status === "off-track").length > 0 && <span className="text-red-500">{chart.tasks.filter(t => t.status === "off-track").length} off track</span>}
+              {chart.tasks.filter(t => t.status === "done").length > 0 && <span className="text-emerald-500">{chart.tasks.filter(t => t.status === "done").length} done</span>}
+            </span>
+          </button>
+          {showTasks && (
+            <div className="mt-1.5 space-y-1 max-h-[180px] overflow-y-auto">
+              {chart.tasks
+                .sort((a, b) => {
+                  const ord: Record<string, number> = { "off-track": 0, "on-track": 1, "not-started": 2, "done": 3 };
+                  return (ord[a.status] ?? 9) - (ord[b.status] ?? 9);
+                })
+                .map(t => {
+                  const cfg = TASK_STATUS_CFG[t.status];
+                  return (
+                    <div key={t.id} className="flex items-center gap-1.5 text-[9px] group">
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} title={cfg.label} />
+                      <span className="min-w-0 flex-1 truncate" title={t.name}>{t.name}</span>
+                      {t.assignee && <span className="text-[8px] text-muted-foreground/60 shrink-0">{t.assignee}</span>}
+                      <div className="w-10 h-1 rounded-full bg-muted overflow-hidden shrink-0">
+                        <div
+                          className={`h-full rounded-full ${t.status === "done" ? "bg-emerald-500" : t.status === "off-track" ? "bg-red-500" : t.status === "on-track" ? "bg-blue-500" : "bg-zinc-400"}`}
+                          style={{ width: `${Math.min(t.pct, 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-7 text-right tabular-nums font-semibold shrink-0">{t.pct}%</span>
+                    </div>
+                  );
+                })}
             </div>
           )}
         </div>
