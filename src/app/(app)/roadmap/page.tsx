@@ -46,7 +46,19 @@ export default async function RoadmapPage() {
           },
         },
       }),
-      prisma.person.findMany({ orderBy: { name: "asc" } }),
+      prisma.person.findMany({
+        where: { initials: { not: null } },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true, initials: true },
+      }).then(all => {
+        const seen = new Set<string>();
+        return all.filter(p => {
+          if (!p.initials || p.initials.length < 2) return false;
+          if (seen.has(p.initials)) return false;
+          seen.add(p.initials);
+          return true;
+        });
+      }),
       prisma.progressLog.findMany({
         orderBy: { logDate: "asc" },
         select: {

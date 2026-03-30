@@ -97,14 +97,11 @@ function notionPushBackground(
       if (!dbInfo) return;
       const token = await getNotionToken();
       const properties: Record<string, unknown> = {
-        "ID Num": richText(taskName),
-        "Percent Complete": richText(String(input.percentComplete)),
-        "Total Points": richText(String(input.totalPoints)),
-        "Current Points": richText(String(input.currentPoints)),
-        "Reason for update": richText(input.comment || ""),
-        "Update Name": richText(`@${userName}`),
-        "Scheduled Dates": richText(todayStr),
-        "Original or Added Scope": richText("Original"),
+        "Percent Complete": richText(String(input.percentComplete / 100)),
+        "Current Points ": richText(String(input.currentPoints)),
+        "Reason for Update": richText(input.comment || ""),
+        "Update Name": richText(userName),
+        "Date Added": { date: { start: todayStr } },
       };
       if (ws) properties["Workstream"] = richText(ws.name);
       if (del) properties["Deliverable"] = richText(del.name);

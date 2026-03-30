@@ -45,7 +45,12 @@ export function LiveSyncProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      const res = await fetch("/api/sync/auto");
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 90_000);
+
+      const res = await fetch("/api/sync/auto", { signal: controller.signal });
+      clearTimeout(timeout);
+
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `Sync failed (${res.status})`);
@@ -62,7 +67,9 @@ export function LiveSyncProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       if (!mountedRef.current) return;
-      setError(err instanceof Error ? err.message : String(err));
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("abort")) setError(null);
+      else setError(msg);
     } finally {
       if (mountedRef.current) setSyncing(false);
     }

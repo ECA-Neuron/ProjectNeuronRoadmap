@@ -26,6 +26,7 @@ export default async function MyDashboardPage() {
   let myOpenIssues: any[] = [];
   let myProgressLogs: any[] = [];
   let workstreams: any[] = [];
+  let people: { id: string; name: string; initials: string | null }[] = [];
 
   try {
     person = await prisma.person.findFirst({
@@ -87,6 +88,10 @@ export default async function MyDashboardPage() {
             workstream: { select: { id: true, name: true } },
             subTask: { select: { id: true, name: true } },
             assignees: { include: { person: { select: { id: true, name: true, initials: true } } } },
+            comments: {
+              orderBy: { createdAt: "asc" },
+              include: { mentions: { include: { person: { select: { id: true, name: true, initials: true } } } } },
+            },
           },
           orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
         })
@@ -122,6 +127,20 @@ export default async function MyDashboardPage() {
           },
         })
       : [];
+
+    people = await prisma.person.findMany({
+      where: { initials: { not: null } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, initials: true },
+    }).then(all => {
+      const seen = new Set<string>();
+      return all.filter(p => {
+        if (!p.initials || p.initials.length < 2) return false;
+        if (seen.has(p.initials)) return false;
+        seen.add(p.initials);
+        return true;
+      });
+    });
 
     workstreams = await prisma.workstream.findMany({
       orderBy: { name: "asc" },
@@ -167,6 +186,7 @@ export default async function MyDashboardPage() {
         openIssues={serializeForClient(myOpenIssues) as any}
         progressLogs={serializeForClient(myProgressLogs) as any}
         workstreams={serializeForClient(workstreams) as any}
+        people={people}
       />
     </div>
   );

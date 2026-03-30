@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { addRoadmapItem } from "@/lib/actions/add-roadmap-item";
+import { DatePicker } from "@/components/ui/date-picker";
 
 interface SubTask { id: string; name: string; points: number; completionPercent: number; status: string }
 interface Initiative { id: string; name: string; status: string; subTasks: SubTask[] }
@@ -98,7 +99,7 @@ export function AddTaskView({ workstreams, people }: { workstreams: Workstream[]
   }, [initId, taskName, estimatedDays, riskLevel, status, startDate, endDate, assigneeId, saving, router]);
 
   const labelCls = "block text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1";
-  const inputCls = "w-full h-8 text-xs border rounded px-2 bg-background focus:outline-none focus:ring-1 focus:ring-blue-400";
+  const inputCls = "w-full h-8 text-xs border border-border rounded px-2 bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-blue-400";
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -110,7 +111,7 @@ export function AddTaskView({ workstreams, people }: { workstreams: Workstream[]
       </div>
 
       {flash && (
-        <div className={`text-xs px-3 py-2 rounded ${flash.ok ? "bg-green-50 text-green-700 border border-green-200" : "bg-red-50 text-red-700 border border-red-200"}`}>
+        <div className={`text-xs px-3 py-2 rounded ${flash.ok ? "bg-green-50 dark:bg-green-950/40 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800" : "bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"}`}>
           {flash.text}
         </div>
       )}
@@ -166,7 +167,7 @@ export function AddTaskView({ workstreams, people }: { workstreams: Workstream[]
           </div>
           <div>
             <label className={labelCls}>Calculated Points</label>
-            <div className="h-8 flex items-center text-sm font-semibold text-blue-600 px-2 bg-blue-50 border border-blue-200 rounded">
+            <div className="h-8 flex items-center text-sm font-semibold text-blue-600 dark:text-blue-400 px-2 bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded">
               {computedPoints || "—"}
             </div>
           </div>
@@ -178,11 +179,11 @@ export function AddTaskView({ workstreams, people }: { workstreams: Workstream[]
           </div>
           <div>
             <label className={labelCls}>Start Date</label>
-            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className={inputCls} />
+            <DatePicker value={startDate} onChange={setStartDate} placeholder="Start date" className="h-8 text-xs" />
           </div>
           <div>
             <label className={labelCls}>End Date</label>
-            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className={inputCls} />
+            <DatePicker value={endDate} onChange={setEndDate} placeholder="End date" className="h-8 text-xs" />
           </div>
           {people.length > 0 && (
             <div>

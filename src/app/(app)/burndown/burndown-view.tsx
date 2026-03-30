@@ -76,13 +76,19 @@ interface BurnPoint {
   dayLogs: { taskName: string; comment: string | null; by: string | null; pts: number }[];
 }
 
+interface BurndownResult {
+  points: BurnPoint[];
+  logVelocity: number;
+  logBurnt: number;
+}
+
 function buildBurndown(
   totalScope: number,
   logs: ProgressLogEntry[],
   rangeStart: string,
   rangeEnd: string,
-): BurnPoint[] {
-  if (totalScope === 0) return [];
+): BurndownResult {
+  if (totalScope === 0) return { points: [], logVelocity: 0, logBurnt: 0 };
 
   const dated = logs
     .filter(l => l.logDate)
@@ -95,7 +101,7 @@ function buildBurndown(
     allDays.push(cur.toISOString().slice(0, 10));
     cur.setUTCDate(cur.getUTCDate() + 1);
   }
-  if (allDays.length === 0) return [];
+  if (allDays.length === 0) return { points: [], logVelocity: 0, logBurnt: 0 };
 
   const byDay = new Map<string, ProgressLogEntry[]>();
   for (const l of dated) {
@@ -148,25 +154,25 @@ function buildBurndown(
   }
 
   // Compute velocity projection from today onwards
+  let logVelocity = 0;
+  let logBurntTotal = 0;
   if (todayIdx >= 0) {
-    const actualAtToday = points[todayIdx].actualRemaining ?? totalScope;
+    const anchorRemaining = points[todayIdx].actualRemaining ?? totalScope;
+    logBurntTotal = totalScope - anchorRemaining;
     const elapsedDays = todayIdx + 1;
-    const burntSoFar = totalScope - actualAtToday;
-    const velocity = elapsedDays > 0 ? burntSoFar / elapsedDays : 0;
+    logVelocity = elapsedDays > 0 ? logBurntTotal / elapsedDays : 0;
 
-    // Set projection on today (anchoring point)
-    points[todayIdx].projectedRemaining = actualAtToday;
+    points[todayIdx].projectedRemaining = anchorRemaining;
 
-    // Project forward from today
-    if (velocity > 0) {
+    if (logVelocity > 0) {
       for (let i = todayIdx + 1; i < points.length; i++) {
         const daysPast = i - todayIdx;
-        points[i].projectedRemaining = Math.max(0, Math.round(actualAtToday - velocity * daysPast));
+        points[i].projectedRemaining = Math.max(0, Math.round(anchorRemaining - logVelocity * daysPast));
       }
     }
   }
 
-  return points;
+  return { points, logVelocity, logBurnt: logBurntTotal };
 }
 
 /* ─── Track status & velocity projection ─────────────── */
@@ -185,10 +191,13 @@ function computeTrackInfo(
   burntPts: number,
   startDate: string | null,
   endDate: string | null,
+  logOverride?: { logVelocity: number; logBurnt: number },
 ): TrackInfo {
   const sd = toISO(startDate);
   const ed = toISO(endDate);
-  const remaining = totalPts - burntPts;
+
+  const effectiveBurnt = logOverride ? logOverride.logBurnt : burntPts;
+  const remaining = totalPts - effectiveBurnt;
 
   if (remaining <= 0) return { status: "done", velocity: 0, estCompletion: null, dueDate: ed, daysOff: 0, daysAhead: 0 };
   if (!sd || !ed) return { status: "no-data", velocity: 0, estCompletion: null, dueDate: ed, daysOff: 0, daysAhead: 0 };
@@ -197,7 +206,7 @@ function computeTrackInfo(
   const elapsed = daysBetween(effectiveStart, TODAY);
   if (elapsed <= 0) return { status: "no-data", velocity: 0, estCompletion: null, dueDate: ed, daysOff: 0, daysAhead: 0 };
 
-  const velocity = burntPts / elapsed;
+  const velocity = logOverride ? logOverride.logVelocity : (effectiveBurnt / elapsed);
   const totalDays = daysBetween(sd, ed);
   const idealBurnPerDay = totalPts / Math.max(totalDays, 1);
   const elapsedFromStart = daysBetween(sd, TODAY);
@@ -212,12 +221,12 @@ function computeTrackInfo(
   }
 
   const daysOff = estCompletion ? daysBetween(ed, estCompletion) : 0;
-  const diff = burntPts - idealBurnt;
+  const diff = effectiveBurnt - idealBurnt;
   const daysAhead = velocity > 0 ? Math.round(diff / velocity) : 0;
 
   let status: TrackInfo["status"];
-  if (burntPts >= idealBurnt * 0.95) {
-    status = burntPts > idealBurnt * 1.1 ? "ahead" : "on-track";
+  if (effectiveBurnt >= idealBurnt * 0.95) {
+    status = effectiveBurnt > idealBurnt * 1.1 ? "ahead" : "on-track";
   } else {
     status = "off-track";
   }
@@ -451,9 +460,9 @@ function buildItemChart(
   const sd = toISO(startDate);
   const ed = toISO(endDate);
   const hasDate = !!(sd && ed);
-  const data = hasDate ? buildBurndown(total, logs, sd!, ed!) : [];
-  const track = computeTrackInfo(total, burnt, startDate, endDate);
-  return { id, name, totalPts: total, burntPts: burnt, data, hasDate, dateLabel: fmtDateRange(startDate, endDate), startDate, endDate, track };
+  const result = hasDate ? buildBurndown(total, logs, sd!, ed!) : { points: [], logVelocity: 0, logBurnt: 0 };
+  const track = computeTrackInfo(total, burnt, startDate, endDate, { logVelocity: result.logVelocity, logBurnt: result.logBurnt });
+  return { id, name, totalPts: total, burntPts: burnt, data: result.points, hasDate, dateLabel: fmtDateRange(startDate, endDate), startDate, endDate, track };
 }
 
 function buildTaskChart(
@@ -467,10 +476,10 @@ function buildTaskChart(
   const sd = toISO(parentStart);
   const ed = toISO(parentEnd);
   const hasDate = !!(sd && ed);
-  const data = hasDate ? buildBurndown(task.points, taskLogs, sd!, ed!) : [];
   const burnt = Math.round(task.points * task.completionPercent / 100);
-  const track = computeTrackInfo(task.points, burnt, parentStart, parentEnd);
-  return { id: task.id, name: task.name, totalPts: task.points, burntPts: burnt, data, hasDate, dateLabel: fmtDateRange(parentStart, parentEnd), startDate: parentStart, endDate: parentEnd, track };
+  const result = hasDate ? buildBurndown(task.points, taskLogs, sd!, ed!) : { points: [], logVelocity: 0, logBurnt: 0 };
+  const track = computeTrackInfo(task.points, burnt, parentStart, parentEnd, { logVelocity: result.logVelocity, logBurnt: result.logBurnt });
+  return { id: task.id, name: task.name, totalPts: task.points, burntPts: burnt, data: result.points, hasDate, dateLabel: fmtDateRange(parentStart, parentEnd), startDate: parentStart, endDate: parentEnd, track };
 }
 
 /* ─── Dropdown select ────────────────────────────────── */
@@ -535,8 +544,9 @@ export default function BurndownView({ workstreams, progressLogs }: {
   overallEndD.setUTCMonth(overallEndD.getUTCMonth() + 1);
   overallEndD.setUTCDate(0);
   const overallEnd = overallEndD.toISOString().slice(0, 10);
-  const overallChart = useMemo(() => buildBurndown(totalPts, progressLogs, overallStart, overallEnd), [totalPts, progressLogs, overallStart, overallEnd]);
-  const overallTrack = useMemo(() => computeTrackInfo(totalPts, burntPts, overallStart, overallEnd), [totalPts, burntPts, overallStart, overallEnd]);
+  const overallResult = useMemo(() => buildBurndown(totalPts, progressLogs, overallStart, overallEnd), [totalPts, progressLogs, overallStart, overallEnd]);
+  const overallChart = overallResult.points;
+  const overallTrack = useMemo(() => computeTrackInfo(totalPts, burntPts, overallStart, overallEnd, { logVelocity: overallResult.logVelocity, logBurnt: overallResult.logBurnt }), [totalPts, burntPts, overallStart, overallEnd, overallResult.logVelocity, overallResult.logBurnt]);
 
   /* ── Dropdown options ── */
 

@@ -135,7 +135,18 @@ export async function pullFromNotion(
   _activeNotionApi = makeNotionApi(dbInfo.token);
 
   const pages = await getAllPages(dbInfo.id);
+
+  // Log the property names from the first page so we can discover relation properties
+  if (pages.length > 0) {
+    const propSummary = Object.entries(pages[0].properties).map(([k, v]) => `${k} (${v.type})`).join(", ");
+    console.log(`[roadmap-sync] DB properties: ${propSummary}`);
+  }
+
   const parsed = pages.map(parseNotionPage);
+
+  // Log dependency stats
+  const depsFound = parsed.reduce((sum, p) => sum + p.dependencyNotionIds.length + p.blockingNotionIds.length, 0);
+  console.log(`[roadmap-sync] Parsed ${parsed.length} pages, ${depsFound} dependency links found (blocked-by + blocking)`);
 
   // We need a default program to attach workstreams to
   let defaultProgram = await prisma.program.findFirst({
@@ -530,6 +541,73 @@ export async function pullFromNotion(
         errors.push(`${level} "${item.name}": ${msg}`);
       }
     }
+  }
+
+  // ── Sync dependencies ──
+  // Resolve Notion page IDs to Initiative (Feature) DB IDs using notionMeta,
+  // then batch-create InitiativeDependency rows.
+  try {
+    await prisma.initiativeDependency.deleteMany({});
+
+    // Pre-build a map: notionPageId → initiativeId for fast resolution
+    const taskDbIds = Array.from(notionMeta.entries())
+      .filter(([, m]) => m.level === "Task")
+      .map(([, m]) => m.dbId);
+
+    const taskInitMap = new Map<string, string>();
+    if (taskDbIds.length > 0) {
+      const subs = await prisma.subTask.findMany({
+        where: { id: { in: taskDbIds } },
+        select: { id: true, initiativeId: true },
+      });
+      for (const s of subs) taskInitMap.set(s.id, s.initiativeId);
+    }
+
+    function resolveToInitiativeId(notionId: string): string | null {
+      const meta = notionMeta.get(notionId);
+      if (!meta) return null;
+      if (meta.level === "Feature") return meta.dbId;
+      if (meta.level === "Task") return taskInitMap.get(meta.dbId) ?? null;
+      return null;
+    }
+
+    const depEdges: { initiativeId: string; dependsOnId: string }[] = [];
+    const seen = new Set<string>();
+
+    for (const item of parsed) {
+      const thisInitId = resolveToInitiativeId(item.notionPageId);
+
+      // "Blocked by" — this item depends on each listed page
+      if (item.dependencyNotionIds.length > 0 && thisInitId) {
+        for (const depNotionId of item.dependencyNotionIds) {
+          const depInitId = resolveToInitiativeId(depNotionId);
+          if (!depInitId || depInitId === thisInitId) continue;
+          const key = `${thisInitId}:${depInitId}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          depEdges.push({ initiativeId: thisInitId, dependsOnId: depInitId });
+        }
+      }
+
+      // "Blocking" — each listed page depends on this item
+      if (item.blockingNotionIds.length > 0 && thisInitId) {
+        for (const blockedNotionId of item.blockingNotionIds) {
+          const blockedInitId = resolveToInitiativeId(blockedNotionId);
+          if (!blockedInitId || blockedInitId === thisInitId) continue;
+          const key = `${blockedInitId}:${thisInitId}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          depEdges.push({ initiativeId: blockedInitId, dependsOnId: thisInitId });
+        }
+      }
+    }
+
+    if (depEdges.length > 0) {
+      await prisma.initiativeDependency.createMany({ data: depEdges, skipDuplicates: true });
+    }
+    console.log(`[sync] Synced ${depEdges.length} dependencies`);
+  } catch (err) {
+    errors.push(`Dependencies sync: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   return { synced, errors };

@@ -4,6 +4,8 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { addRoadmapItem } from "@/lib/actions/add-roadmap-item";
 import { updateRoadmapItem } from "@/lib/actions/update-roadmap-dates";
+import { deleteRoadmapItem } from "@/lib/actions/delete-roadmap-item";
+import { DatePicker } from "@/components/ui/date-picker";
 
 // ─── Types ───────────────────────────────────────────
 
@@ -42,6 +44,7 @@ interface FlatRow {
   id: string; name: string; level: Level; status: string;
   startDate: string | null; endDate: string | null;
   assign: string | null; depth: number; childCount: number;
+  pct: number | null;
 }
 
 interface AddButtonRow {
@@ -105,25 +108,50 @@ const LEVEL_LABELS: Record<Level, string> = {
 
 // ─── Flatten with Add-buttons ────────────────────────
 
+function computeFeaturePct(init: InitiativeRow): number | null {
+  if (init.subTasks.length === 0) return null;
+  const total = init.subTasks.reduce((s, t) => s + (t.completionPercent ?? 0), 0);
+  return Math.round(total / init.subTasks.length);
+}
+
+function collectTaskPcts(inits: InitiativeRow[]): number[] {
+  const pcts: number[] = [];
+  for (const init of inits) {
+    for (const sub of init.subTasks) pcts.push(sub.completionPercent ?? 0);
+  }
+  return pcts;
+}
+
+function avgPct(pcts: number[]): number | null {
+  if (pcts.length === 0) return null;
+  return Math.round(pcts.reduce((a, b) => a + b, 0) / pcts.length);
+}
+
 function buildDisplayRows(workstreams: WorkstreamRow[]): DisplayRow[] {
   const rows: DisplayRow[] = [];
 
   for (const ws of workstreams) {
-    rows.push({ kind: "item", id: ws.id, name: ws.name, level: "Workstream", status: ws.status, startDate: ws.startDate, endDate: ws.endDate, assign: null, depth: 0, childCount: ws.deliverables.length + ws.initiatives.length });
+    const allWsTaskPcts: number[] = [];
+    const childRows: DisplayRow[] = [];
 
     for (const del of ws.deliverables) {
-      rows.push({ kind: "item", id: del.id, name: del.name, level: "Deliverable", status: del.status, startDate: del.startDate, endDate: del.endDate, assign: null, depth: 1, childCount: del.initiatives.length });
+      const delTaskPcts = collectTaskPcts(del.initiatives);
+      allWsTaskPcts.push(...delTaskPcts);
+      childRows.push({ kind: "item", id: del.id, name: del.name, level: "Deliverable", status: del.status, startDate: del.startDate, endDate: del.endDate, assign: null, depth: 1, childCount: del.initiatives.length, pct: avgPct(delTaskPcts) });
 
       for (const init of del.initiatives) {
-        addInit(rows, init, 2);
+        addInit(childRows, init, 2);
       }
-      rows.push({ kind: "add", level: "Feature", parentId: del.id, depth: 2 });
+      childRows.push({ kind: "add", level: "Feature", parentId: del.id, depth: 2 });
     }
 
     for (const init of ws.initiatives) {
-      addInit(rows, init, 1);
+      allWsTaskPcts.push(...collectTaskPcts([init]));
+      addInit(childRows, init, 1);
     }
 
+    rows.push({ kind: "item", id: ws.id, name: ws.name, level: "Workstream", status: ws.status, startDate: ws.startDate, endDate: ws.endDate, assign: null, depth: 0, childCount: ws.deliverables.length + ws.initiatives.length, pct: avgPct(allWsTaskPcts) });
+    rows.push(...childRows);
     rows.push({ kind: "add", level: "Deliverable", parentId: ws.id, depth: 1 });
   }
 
@@ -133,9 +161,9 @@ function buildDisplayRows(workstreams: WorkstreamRow[]): DisplayRow[] {
 }
 
 function addInit(rows: DisplayRow[], init: InitiativeRow, depth: number) {
-  rows.push({ kind: "item", id: init.id, name: init.name, level: "Feature", status: init.status, startDate: init.startDate, endDate: init.endDate, assign: init.ownerInitials, depth, childCount: init.subTasks.length });
+  rows.push({ kind: "item", id: init.id, name: init.name, level: "Feature", status: init.status, startDate: init.startDate, endDate: init.endDate, assign: init.ownerInitials, depth, childCount: init.subTasks.length, pct: computeFeaturePct(init) });
   for (const sub of init.subTasks) {
-    rows.push({ kind: "item", id: sub.id, name: sub.name, level: "Task", status: sub.status, startDate: sub.startDate, endDate: sub.endDate, assign: sub.assignee?.name ?? null, depth: depth + 1, childCount: 0 });
+    rows.push({ kind: "item", id: sub.id, name: sub.name, level: "Task", status: sub.status, startDate: sub.startDate, endDate: sub.endDate, assign: sub.assignee?.name ?? null, depth: depth + 1, childCount: 0, pct: sub.completionPercent ?? 0 });
   }
   rows.push({ kind: "add", level: "Task", parentId: init.id, depth: depth + 1 });
 }
@@ -247,13 +275,13 @@ function ItemFormCard({ mode, onSaved, onCancel }: { mode: FormMode; onSaved: ()
 
   const lv = LEVEL_STYLE[level];
   const accentColor = isEdit ? "border-l-amber-400" : "border-l-blue-400";
-  const bgColor = isEdit ? "bg-amber-50/50" : "bg-blue-50/50";
+  const bgColor = isEdit ? "bg-amber-50/50 dark:bg-amber-950/30" : "bg-blue-50/50 dark:bg-blue-950/30";
   const labelCls = "block text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5";
-  const fieldCls = "w-full h-7 text-[11px] bg-white border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-blue-400";
+  const fieldCls = "w-full h-7 text-[11px] bg-background text-foreground border border-border rounded px-2 focus:outline-none focus:ring-1 focus:ring-blue-400";
 
   return (
     <tr className="border-b">
-      <td colSpan={5} className="p-0">
+      <td colSpan={6} className="p-0">
         <div className={`${bgColor} border-l-4 ${accentColor} px-4 py-3`} style={{ marginLeft: `${depth * 20}px` }}>
           <div className="flex items-center justify-between mb-3">
             <span className="inline-block text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ backgroundColor: lv.bg, color: lv.text }}>
@@ -285,11 +313,11 @@ function ItemFormCard({ mode, onSaved, onCancel }: { mode: FormMode; onSaved: ()
             </div>
             <div>
               <label className={labelCls}>Start Date</label>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} onKeyDown={handleKeyDown} className={fieldCls} disabled={saving} />
+              <DatePicker value={startDate} onChange={setStartDate} onKeyDown={handleKeyDown} disabled={saving} placeholder="Start date" />
             </div>
             <div>
               <label className={labelCls}>End Date</label>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} onKeyDown={handleKeyDown} className={fieldCls} disabled={saving} />
+              <DatePicker value={endDate} onChange={setEndDate} onKeyDown={handleKeyDown} disabled={saving} placeholder="End date" />
             </div>
             {!isEdit && level === "Task" && people.length > 0 && (
               <div>
@@ -316,7 +344,7 @@ function ItemFormCard({ mode, onSaved, onCancel }: { mode: FormMode; onSaved: ()
               </div>
               <div>
                 <label className={labelCls}>Points</label>
-                <div className="h-7 flex items-center text-xs font-semibold text-blue-600 px-2 bg-blue-100/60 border border-blue-200 rounded">
+                <div className="h-7 flex items-center text-xs font-semibold text-blue-600 dark:text-blue-400 px-2 bg-blue-100/60 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 rounded">
                   {computedPoints || "—"}
                 </div>
               </div>
@@ -348,6 +376,7 @@ export function RoadmapTable({ workstreams, people = [], collapseSignal = 0 }: {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [addingAt, setAddingAt] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const router = useRouter();
 
   const collapsibleIds = useMemo(() => allRows.filter(r => r.kind === "item" && r.childCount > 0).map(r => (r as FlatRow & { kind: "item" }).id), [allRows]);
@@ -396,6 +425,20 @@ export function RoadmapTable({ workstreams, people = [], collapseSignal = 0 }: {
     setEditingId(null);
   }, []);
 
+  const handleDelete = useCallback(async (id: string, level: Level, name: string) => {
+    if (!confirm(`Delete "${name}"? This will also delete all children and archive from Notion.`)) return;
+    setDeletingId(id);
+    try {
+      await deleteRoadmapItem({ id, level });
+      router.refresh();
+    } catch (err) {
+      console.error("Delete failed:", err);
+      alert("Failed to delete item.");
+    } finally {
+      setDeletingId(null);
+    }
+  }, [router]);
+
   if (allRows.length <= 1) return <div className="text-center py-12 text-muted-foreground">No roadmap data.</div>;
 
   return (
@@ -407,6 +450,7 @@ export function RoadmapTable({ workstreams, people = [], collapseSignal = 0 }: {
               <th className="text-left font-medium px-3 py-2 min-w-[320px]">Name</th>
               <th className="text-left font-medium px-2 py-2 w-[90px]">Level</th>
               <th className="text-left font-medium px-2 py-2 w-[100px]">Status</th>
+              <th className="text-left font-medium px-2 py-2 w-[60px]">%</th>
               <th className="text-left font-medium px-2 py-2 w-[150px]">Date</th>
               <th className="text-left font-medium px-2 py-2 w-[120px]">Assign</th>
             </tr>
@@ -427,7 +471,7 @@ export function RoadmapTable({ workstreams, people = [], collapseSignal = 0 }: {
                 }
                 return (
                   <tr key={`add-${key}`} className="border-b hover:bg-accent/20 transition-colors">
-                    <td colSpan={5} className="px-3 py-1">
+                    <td colSpan={6} className="px-3 py-1">
                       <button
                         onClick={() => setAddingAt(key)}
                         className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-blue-600 transition-colors"
@@ -472,6 +516,20 @@ export function RoadmapTable({ workstreams, people = [], collapseSignal = 0 }: {
                           <path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
                         </svg>
                       </button>
+                      <button
+                        onClick={() => handleDelete(row.id, row.level, row.name)}
+                        disabled={deletingId === row.id}
+                        className="w-5 h-5 flex items-center justify-center rounded opacity-0 group-hover/row:opacity-100 hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-all shrink-0 disabled:opacity-50"
+                        title="Delete item"
+                      >
+                        {deletingId === row.id ? (
+                          <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                        ) : (
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        )}
+                      </button>
                     </div>
                   </td>
                   <td className="px-2 py-1.5">
@@ -482,6 +540,22 @@ export function RoadmapTable({ workstreams, people = [], collapseSignal = 0 }: {
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: st.dot }} />
                       <span className="text-[11px]" style={{ color: st.text }}>{statusLabel(row.status)}</span>
                     </div>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    {row.pct !== null && (
+                      <div className="flex items-center gap-1.5">
+                        <div className="w-8 h-1.5 rounded-full bg-muted/40 overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${Math.min(row.pct, 100)}%`,
+                              backgroundColor: row.pct >= 100 ? "#22c55e" : row.pct > 0 ? "#3b82f6" : "transparent",
+                            }}
+                          />
+                        </div>
+                        <span className={`text-[10px] tabular-nums ${row.pct >= 100 ? "text-emerald-500" : "text-muted-foreground"}`}>{row.pct}%</span>
+                      </div>
+                    )}
                   </td>
                   <td className="px-2 py-1.5 text-[11px] text-muted-foreground whitespace-nowrap">{fmtRange(row.startDate, row.endDate)}</td>
                   <td className="px-2 py-1.5 text-[11px] text-muted-foreground truncate max-w-[120px]">{row.assign ?? ""}</td>

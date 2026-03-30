@@ -63,8 +63,11 @@ export async function addRoadmapItem(input: AddItemInput) {
   await requireRole(["ADMIN", "MEMBER"]);
 
   const { level, name, parentId, status = "NOT_STARTED" } = input;
-  const startDate = input.startDate ? new Date(input.startDate) : null;
-  const endDate = input.endDate ? new Date(input.endDate) : null;
+  let startDate = input.startDate ? new Date(input.startDate) : null;
+  let endDate = input.endDate ? new Date(input.endDate) : null;
+  if (startDate && endDate && startDate > endDate) {
+    [startDate, endDate] = [endDate, startDate];
+  }
   const points = input.estimatedDays != null
     ? calcPoints(input.estimatedDays, input.riskLevel)
     : (input.points ?? 0);
@@ -160,12 +163,30 @@ export async function addRoadmapItem(input: AddItemInput) {
     const dbRecord = { name, status, startDate, endDate, points };
     const props = buildNotionProperties(dbRecord, notionLevel);
 
+    if (input.estimatedDays != null) {
+      props["Estimated Days"] = { number: input.estimatedDays };
+    }
+    if (input.riskLevel) {
+      props["Level of Risk"] = { select: { name: input.riskLevel } };
+    }
+
     const dbInfo = await discoverDatabase(ROADMAP_DB_TITLE);
     if (dbInfo) {
+      // Use the actual title property name from the DB schema
+      const titlePropName = Object.entries(dbInfo.properties)
+        .find(([, v]) => v.type === "title")?.[0];
+      if (titlePropName && titlePropName !== "Name") {
+        props[titlePropName] = props["Name"];
+        delete props["Name"];
+      }
+
+      if (parentNotionId) {
+        props["Parent (L1)"] = { relation: [{ id: parentNotionId }] };
+      }
+
+      console.log(`[add-item] Creating Notion page for ${level} "${name}" with props:`, JSON.stringify(Object.keys(props)));
       const created = await createNotionPage({
-        parent: parentNotionId
-          ? { page_id: parentNotionId }
-          : { database_id: dbInfo.id },
+        parent: { database_id: dbInfo.id },
         properties: props,
       });
 

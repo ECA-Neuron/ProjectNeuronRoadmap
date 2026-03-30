@@ -29,6 +29,10 @@ export interface ParsedNotionPage {
   assignName: string | null;
   openIssuesFlag: boolean;
   lastEditedTime: Date;
+  /** IDs of pages this item depends on ("Blocked by") */
+  dependencyNotionIds: string[];
+  /** IDs of pages this item blocks ("Blocking") — reverse deps */
+  blockingNotionIds: string[];
 }
 
 // Notion status text → dashboard status enum
@@ -182,6 +186,14 @@ export function parseNotionPage(page: PageObjectResponse): ParsedNotionPage {
   const parentIds = parentProp ? getRelationIds(parentProp) : [];
   const parentNotionId = parentIds.length > 0 ? parentIds[0] : null;
 
+  // "Blocked by" = pages this item depends on
+  const depProp = findProp("blocked by") ?? findProp("dependencies") ?? findProp("depends on") ?? findProp("dependency");
+  const dependencyNotionIds = depProp ? getRelationIds(depProp) : [];
+
+  // "Blocking" = pages this item blocks (reverse: those pages depend on this one)
+  const blockingProp = findProp("blocking") ?? findProp("blocks");
+  const blockingNotionIds = blockingProp ? getRelationIds(blockingProp) : [];
+
   return {
     notionPageId: page.id,
     parentNotionId,
@@ -195,6 +207,8 @@ export function parseNotionPage(page: PageObjectResponse): ParsedNotionPage {
     assignName,
     openIssuesFlag,
     lastEditedTime: new Date(page.last_edited_time),
+    dependencyNotionIds,
+    blockingNotionIds,
   };
 }
 
@@ -228,7 +242,7 @@ export function buildNotionProperties(
   const props: Record<string, unknown> = {
     Name: { title: [{ text: { content: record.name } }] },
     Status: {
-      select: {
+      status: {
         name: REVERSE_STATUS[record.status] ?? "Not started",
       },
     },
@@ -236,20 +250,19 @@ export function buildNotionProperties(
   };
 
   if (record.startDate || record.endDate) {
+    let start = record.startDate;
+    let end = record.endDate;
+    if (start && end && start > end) [start, end] = [end, start];
     props["Date"] = {
       date: {
-        start: record.startDate
-          ? record.startDate.toISOString().split("T")[0]
-          : null,
-        end: record.endDate
-          ? record.endDate.toISOString().split("T")[0]
-          : null,
+        start: start ? start.toISOString().split("T")[0] : null,
+        end: end ? end.toISOString().split("T")[0] : null,
       },
     };
   }
 
   if (record.points != null && record.points > 0) {
-    props["Points"] = { number: record.points };
+    props["Total Points"] = { number: record.points };
   }
 
   return props;

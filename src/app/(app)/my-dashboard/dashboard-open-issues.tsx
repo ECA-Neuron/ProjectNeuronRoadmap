@@ -25,8 +25,9 @@ interface DashboardIssue {
   id: string;
   title: string;
   severity: string;
-  workstream: { name: string };
-  subTask: { name: string } | null;
+  createdAt?: string;
+  workstream: { id?: string; name: string } | null;
+  subTask: { id?: string; name: string } | null;
   assignees?: { person: { id: string; name: string; initials: string | null } }[];
   comments: IssueComment[];
 }

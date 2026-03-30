@@ -203,8 +203,7 @@ export const authOptions: NextAuthOptions = {
         } catch (e) {
           console.error("[Notion OAuth] jwt callback DB error:", e);
         }
-      }
-      if (!token.id && token.email) {
+      } else if (token.email) {
         try {
           const u = await prisma.user.findUnique({
             where: { email: token.email as string },

@@ -171,11 +171,21 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
   const taskLookup = new Map<string, string>();
   const deliverableLookup = new Map<string, { id: string; workstreamId: string }>();
 
-  const [allWs, allTasks, allDeliverables] = await Promise.all([
+  const [allWs, allTasks, allDeliverables, allPeople] = await Promise.all([
     prisma.workstream.findMany({ select: { id: true, notionPageId: true } }),
     prisma.subTask.findMany({ select: { id: true, notionPageId: true } }),
     prisma.deliverable.findMany({ select: { id: true, notionPageId: true, workstreamId: true } }),
+    prisma.person.findMany({ select: { id: true, name: true } }),
   ]);
+
+  const personByName = new Map<string, string>();
+  for (const p of allPeople) {
+    personByName.set(p.name.toLowerCase(), p.id);
+    const firstName = p.name.split(/\s+/)[0];
+    if (firstName && !personByName.has(firstName.toLowerCase())) {
+      personByName.set(firstName.toLowerCase(), p.id);
+    }
+  }
 
   for (const ws of allWs) {
     if (ws.notionPageId) wsLookup.set(ws.notionPageId.replace(/-/g, ""), ws.id);
@@ -217,6 +227,7 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
         where: { notionPageId: parsed.notionPageId },
       });
 
+      let issueId: string;
       if (existing) {
         await prisma.openIssue.update({
           where: { id: existing.id },
@@ -229,6 +240,7 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
             resolvedAt: parsed.resolved ? (existing.resolvedAt ?? new Date()) : null,
           },
         });
+        issueId = existing.id;
       } else {
         const createData: Record<string, unknown> = {
           notionPageId: parsed.notionPageId,
@@ -239,8 +251,23 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
           resolvedAt: parsed.resolved ? new Date() : null,
         };
         if (workstreamId) createData.workstreamId = workstreamId;
-        await prisma.openIssue.create({ data: createData as any });
+        const created = await prisma.openIssue.create({ data: createData as any });
+        issueId = created.id;
       }
+
+      // Sync assignees from Notion people
+      const matchedPersonIds = parsed.assignedTo
+        .map(name => personByName.get(name.toLowerCase()))
+        .filter((id): id is string => !!id);
+
+      if (matchedPersonIds.length > 0) {
+        await prisma.openIssueAssignee.deleteMany({ where: { issueId } });
+        await prisma.openIssueAssignee.createMany({
+          data: matchedPersonIds.map(personId => ({ issueId, personId })),
+          skipDuplicates: true,
+        });
+      }
+
       synced++;
     } catch (e) {
       errors.push(`Error processing issue page: ${e instanceof Error ? e.message : String(e)}`);
