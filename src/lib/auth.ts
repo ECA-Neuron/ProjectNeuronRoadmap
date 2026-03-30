@@ -114,6 +114,11 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       if (account?.provider !== "notion") return true;
+
+      try {
+        await prisma.user.updateMany({ where: { role: "VIEWER" }, data: { role: "MEMBER" } });
+      } catch { /* non-fatal */ }
+
       if (!user.email) {
         console.error("[Notion OAuth] No email in user profile — cannot create account");
         return true;
@@ -198,7 +203,10 @@ export const authOptions: NextAuthOptions = {
           });
           if (dbUser) {
             token.id = dbUser.id;
-            token.role = dbUser.role as UserRole;
+            if (dbUser.role !== "MEMBER" && dbUser.role !== "ADMIN") {
+              await prisma.user.update({ where: { id: dbUser.id }, data: { role: "MEMBER" } });
+            }
+            token.role = (dbUser.role === "ADMIN" ? "ADMIN" : "MEMBER") as UserRole;
           }
         } catch (e) {
           console.error("[Notion OAuth] jwt callback DB error:", e);
@@ -211,11 +219,10 @@ export const authOptions: NextAuthOptions = {
           });
           if (u) {
             token.id = u.id;
-            token.role = u.role as UserRole;
-            if (u.role === "VIEWER") {
+            if (u.role !== "MEMBER" && u.role !== "ADMIN") {
               await prisma.user.update({ where: { id: u.id }, data: { role: "MEMBER" } });
-              token.role = "MEMBER" as UserRole;
             }
+            token.role = (u.role === "ADMIN" ? "ADMIN" : "MEMBER") as UserRole;
           }
         } catch (e) {
           console.error("[Notion OAuth] jwt refresh DB error:", e);
