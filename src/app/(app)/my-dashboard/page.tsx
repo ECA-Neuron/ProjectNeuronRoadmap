@@ -84,9 +84,14 @@ export default async function MyDashboardPage() {
       })
     : [];
 
-  // Fetch progress logs for this user's tasks (for personal burndown)
-  const myTaskIds = subTasks.map(t => t.id);
+  // Collect ALL subtask IDs from the user's features + directly assigned
+  const allMySubTaskIds = new Set(subTasks.map(t => t.id));
+  for (const init of initiatives) {
+    for (const st of init.subTasks) allMySubTaskIds.add(st.id);
+  }
+  const myTaskIds = [...allMySubTaskIds];
   const myFeatureIds = initiatives.map(i => i.id);
+
   const myProgressLogs = (myTaskIds.length > 0 || myFeatureIds.length > 0)
     ? await prisma.progressLog.findMany({
         where: {

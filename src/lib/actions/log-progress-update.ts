@@ -131,5 +131,7 @@ export async function logProgressUpdate(input: LogInput) {
 
   revalidatePath("/burndown");
   revalidatePath("/roadmap");
+  revalidatePath("/my-dashboard");
+  revalidatePath("/overview");
   return { id: progressLog.id, taskName: subTask.name };
 }

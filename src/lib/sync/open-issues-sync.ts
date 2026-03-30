@@ -230,17 +230,16 @@ export async function pullOpenIssues(): Promise<{ synced: number; errors: string
           },
         });
       } else {
-        await prisma.openIssue.create({
-          data: {
-            notionPageId: parsed.notionPageId,
-            title: parsed.title,
-            description: parsed.description,
-            severity: parsed.severity,
-            ...(workstreamId ? { workstreamId } : {}),
-            subTaskId,
-            resolvedAt: parsed.resolved ? new Date() : null,
-          },
-        });
+        const createData: Record<string, unknown> = {
+          notionPageId: parsed.notionPageId,
+          title: parsed.title,
+          description: parsed.description,
+          severity: parsed.severity,
+          subTaskId,
+          resolvedAt: parsed.resolved ? new Date() : null,
+        };
+        if (workstreamId) createData.workstreamId = workstreamId;
+        await prisma.openIssue.create({ data: createData as any });
       }
       synced++;
     } catch (e) {

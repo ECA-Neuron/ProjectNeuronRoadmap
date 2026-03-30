@@ -41,6 +41,7 @@ interface UpdateItemInput {
   status?: string;
   startDate?: string | null;
   endDate?: string | null;
+  completionPercent?: number;
 }
 
 export async function updateRoadmapDates(input: UpdateDatesInput) {
@@ -88,12 +89,13 @@ export async function updateRoadmapItem(input: UpdateItemInput) {
   await requireRole(["ADMIN", "MEMBER"]);
 
   const { id, level } = input;
-  const data: Record<string, string | Date | null | undefined> = {};
+  const data: Record<string, string | number | Date | null | undefined> = {};
 
   if (input.name !== undefined) data.name = input.name;
   if (input.status !== undefined) data.status = input.status;
   if (input.startDate !== undefined) data.startDate = input.startDate ? new Date(input.startDate) : null;
   if (input.endDate !== undefined) data.endDate = input.endDate ? new Date(input.endDate) : null;
+  if (input.completionPercent !== undefined) data.completionPercent = Math.max(0, Math.min(100, Math.round(input.completionPercent)));
 
   let record: any;
   switch (level) {

@@ -39,19 +39,18 @@ export async function createOpenIssue(data: unknown) {
   await requireRole(["ADMIN", "MEMBER"]);
   const parsed = openIssueSchema.parse(data);
   const assigneeIds = parsed.assigneeIds ?? [];
-  const issue = await prisma.openIssue.create({
-    data: {
-      ...(parsed.workstreamId ? { workstreamId: parsed.workstreamId } : {}),
-      subTaskId: parsed.subTaskId || null,
-      title: parsed.title,
-      description: parsed.description || null,
-      severity: parsed.severity || "NOT_A_CONCERN",
-      screenshotUrl: parsed.screenshotUrl || null,
-      assignees: assigneeIds.length
-        ? { create: assigneeIds.map((personId) => ({ personId })) }
-        : undefined,
-    },
-  });
+  const createData: Record<string, unknown> = {
+    subTaskId: parsed.subTaskId || null,
+    title: parsed.title,
+    description: parsed.description || null,
+    severity: parsed.severity || "NOT_A_CONCERN",
+    screenshotUrl: parsed.screenshotUrl || null,
+    assignees: assigneeIds.length
+      ? { create: assigneeIds.map((personId: string) => ({ personId })) }
+      : undefined,
+  };
+  if (parsed.workstreamId) createData.workstreamId = parsed.workstreamId;
+  const issue = await prisma.openIssue.create({ data: createData as any });
   revalidatePath("/open-issues");
   revalidatePath("/workstreams");
   revalidatePath("/my-dashboard");
