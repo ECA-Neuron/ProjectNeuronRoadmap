@@ -979,13 +979,18 @@ function CreateIssueInline({ workstreams, people, onCreated, onCancel }: {
     setSaving(true);
     setError(null);
     try {
-      await createOpenIssue({
+      const result = await createOpenIssue({
         title: title.trim(),
         severity,
         workstreamId: wsId || null,
         description: description.trim() || null,
         assigneeIds,
       });
+      if (!result.success) {
+        setError(result.error);
+        setSaving(false);
+        return;
+      }
       onCreated();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create issue");

@@ -35,12 +35,36 @@ export async function getAllIssues(workstreamId?: string, includeResolved = fals
   });
 }
 
-export async function createOpenIssue(data: unknown) {
-  await requireRole(["ADMIN", "MEMBER"]);
-  const parsed = openIssueSchema.parse(data);
+export type CreateIssueResult =
+  | { success: true; id: string; title: string }
+  | { success: false; error: string };
+
+export async function createOpenIssue(data: unknown): Promise<CreateIssueResult> {
+  try {
+    await requireRole(["ADMIN", "MEMBER"]);
+  } catch (err) {
+    console.error("createOpenIssue auth error:", err);
+    return { success: false, error: "Not authorized" };
+  }
+
+  let parsed;
+  try {
+    parsed = openIssueSchema.parse(data);
+  } catch (err) {
+    console.error("createOpenIssue validation error:", err);
+    return { success: false, error: "Validation failed: " + (err instanceof Error ? err.message : String(err)) };
+  }
+
   const assigneeIds = parsed.assigneeIds ?? [];
 
   try {
+    console.log("createOpenIssue: creating issue with data:", JSON.stringify({
+      title: parsed.title,
+      severity: parsed.severity,
+      workstreamId: parsed.workstreamId,
+      assigneeCount: assigneeIds.length,
+    }));
+
     const issue = await prisma.openIssue.create({
       data: {
         title: parsed.title,
@@ -51,28 +75,29 @@ export async function createOpenIssue(data: unknown) {
         workstreamId: parsed.workstreamId || null,
       },
     });
+    console.log("createOpenIssue: issue created:", issue.id);
 
     if (assigneeIds.length > 0) {
+      console.log("createOpenIssue: adding assignees:", assigneeIds);
       await prisma.openIssueAssignee.createMany({
         data: assigneeIds.map((personId: string) => ({ issueId: issue.id, personId })),
         skipDuplicates: true,
       });
+      console.log("createOpenIssue: assignees added");
     }
 
     try {
       revalidatePath("/open-issues");
       revalidatePath("/workstreams");
       revalidatePath("/my-dashboard");
-    } catch {
-      // Revalidation can fail in edge cases; issue is already created
+    } catch (revalErr) {
+      console.error("createOpenIssue revalidation error (non-fatal):", revalErr);
     }
 
-    return { id: issue.id, title: issue.title };
+    return { success: true, id: issue.id, title: issue.title };
   } catch (err) {
-    console.error("createOpenIssue error:", err);
-    throw new Error(
-      err instanceof Error ? err.message : "Failed to create issue"
-    );
+    console.error("createOpenIssue DB error:", err);
+    return { success: false, error: err instanceof Error ? err.message : "Database error" };
   }
 }
 

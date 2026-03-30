@@ -164,7 +164,7 @@ export function OpenIssuesView({
   function handleCreate() {
     if (!newTitle.trim() || !newWs) return;
     startTransition(async () => {
-      await trackedSave(() => createOpenIssue({
+      const result = await trackedSave(() => createOpenIssue({
         workstreamId: newWs,
         subTaskId: newSubTask || null,
         title: newTitle.trim(),
@@ -173,6 +173,10 @@ export function OpenIssuesView({
         screenshotUrl: newScreenshot,
         assigneeIds: newAssignees.length > 0 ? newAssignees : undefined,
       }));
+      if (result && typeof result === "object" && "success" in result && !result.success) {
+        console.error("Create issue failed:", (result as any).error);
+        return;
+      }
       setNewTitle("");
       setNewDesc("");
       setNewSeverity("NOT_A_CONCERN");
