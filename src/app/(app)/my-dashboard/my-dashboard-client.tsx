@@ -234,28 +234,29 @@ export function MyDashboardClient({
     });
   }, [router]);
 
-  const handlePctChange = useCallback(async (taskId: string, pct: number, comment: string, totalPts: number) => {
-    startTransition(async () => {
-      try {
-        const clamped = Math.max(0, Math.min(100, Math.round(pct)));
-        const currentPoints = Math.round((totalPts * clamped) / 100);
-        await logProgressUpdate({
-          subTaskId: taskId,
-          currentPoints,
-          totalPoints: totalPts,
-          percentComplete: clamped,
-          comment,
-        });
-        const autoStatus = clamped >= 100 ? "DONE" : clamped > 0 ? "IN_PROGRESS" : undefined;
-        if (autoStatus) {
-          await updateRoadmapItem({ id: taskId, level: "Task", status: autoStatus });
-        }
-        router.refresh();
-      } catch (err) {
-        console.error("Failed to log progress:", err);
+  const handlePctChange = useCallback(async (taskId: string, pct: number, comment: string, totalPts: number): Promise<string | null> => {
+    try {
+      const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+      const currentPoints = Math.round((totalPts * clamped) / 100);
+      await logProgressUpdate({
+        subTaskId: taskId,
+        currentPoints,
+        totalPoints: totalPts,
+        percentComplete: clamped,
+        comment,
+      });
+      const autoStatus = clamped >= 100 ? "DONE" : clamped > 0 ? "IN_PROGRESS" : undefined;
+      if (autoStatus) {
+        await updateRoadmapItem({ id: taskId, level: "Task", status: autoStatus });
       }
-    });
-  }, [router]);
+      startTransition(() => { router.refresh(); });
+      return null;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error("Failed to log progress:", msg);
+      return msg;
+    }
+  }, [router, startTransition]);
 
   const handleSync = useCallback(async () => {
     setSyncing(true); setSyncMsg(null);
@@ -704,12 +705,13 @@ function AddTaskModal({ workstreams, onClose, onSaved }: { workstreams: WsOption
 function KanbanCard({ item, onStatusChange, onPctChange }: {
   item: BoardItem;
   onStatusChange: (id: string, status: string) => void;
-  onPctChange: (id: string, pct: number, comment: string, totalPts: number) => void;
+  onPctChange: (id: string, pct: number, comment: string, totalPts: number) => Promise<string | null>;
 }) {
   const [editing, setEditing] = useState(false);
   const [localPct, setLocalPct] = useState(item.pct);
   const [comment, setComment] = useState("");
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const overdue = isOverdue(item.endDate, item.status);
 
   const pctColor = item.pct >= 100
@@ -781,7 +783,7 @@ function KanbanCard({ item, onStatusChange, onPctChange }: {
             <option value="DONE">Done</option>
           </select>
           <button
-            onClick={() => { setLocalPct(item.pct); setComment(""); setEditing(true); }}
+            onClick={() => { setLocalPct(item.pct); setComment(""); setError(null); setEditing(true); }}
             className="w-full h-6 text-[10px] font-medium rounded bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20 transition-colors flex items-center justify-center gap-1"
           >
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125" /></svg>
@@ -830,9 +832,14 @@ function KanbanCard({ item, onStatusChange, onPctChange }: {
               onClick={async () => {
                 if (!canSave || saving) return;
                 setSaving(true);
-                await onPctChange(item.id, localPct, comment.trim(), item.points);
+                setError(null);
+                const err = await onPctChange(item.id, localPct, comment.trim(), item.points);
                 setSaving(false);
-                setEditing(false);
+                if (err) {
+                  setError(err);
+                } else {
+                  setEditing(false);
+                }
               }}
               disabled={!canSave || saving}
               className="flex-1 h-7 text-[10px] font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-1"
@@ -853,6 +860,11 @@ function KanbanCard({ item, onStatusChange, onPctChange }: {
           </div>
           {!canSave && comment.trim().length === 0 && localPct !== item.pct && (
             <p className="text-[9px] text-red-500/70">A comment is required to log progress</p>
+          )}
+          {error && (
+            <div className="rounded-md bg-red-500/10 border border-red-500/20 px-2 py-1.5">
+              <p className="text-[10px] text-red-500 font-medium">Failed to save: {error}</p>
+            </div>
           )}
         </div>
       )}
