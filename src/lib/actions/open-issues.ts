@@ -58,13 +58,6 @@ export async function createOpenIssue(data: unknown): Promise<CreateIssueResult>
   const assigneeIds = parsed.assigneeIds ?? [];
 
   try {
-    console.log("createOpenIssue: creating issue with data:", JSON.stringify({
-      title: parsed.title,
-      severity: parsed.severity,
-      workstreamId: parsed.workstreamId,
-      assigneeCount: assigneeIds.length,
-    }));
-
     const issue = await prisma.openIssue.create({
       data: {
         title: parsed.title,
@@ -75,23 +68,20 @@ export async function createOpenIssue(data: unknown): Promise<CreateIssueResult>
         workstreamId: parsed.workstreamId || null,
       },
     });
-    console.log("createOpenIssue: issue created:", issue.id);
 
     if (assigneeIds.length > 0) {
-      console.log("createOpenIssue: adding assignees:", assigneeIds);
       await prisma.openIssueAssignee.createMany({
         data: assigneeIds.map((personId: string) => ({ issueId: issue.id, personId })),
         skipDuplicates: true,
       });
-      console.log("createOpenIssue: assignees added");
     }
 
     try {
       revalidatePath("/open-issues");
       revalidatePath("/workstreams");
       revalidatePath("/my-dashboard");
-    } catch (revalErr) {
-      console.error("createOpenIssue revalidation error (non-fatal):", revalErr);
+    } catch {
+      // non-fatal
     }
 
     return { success: true, id: issue.id, title: issue.title };

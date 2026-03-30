@@ -98,7 +98,7 @@ function notionProvider(): OAuthConfig<NotionProfile> {
         name: profile.name ?? null,
         email: profile.person?.email ?? null,
         image: profile.avatar_url ?? null,
-        role: "VIEWER" as UserRole,
+        role: "MEMBER" as UserRole,
       };
     },
     clientId: process.env.NOTION_CLIENT_ID!,
@@ -129,7 +129,7 @@ export const authOptions: NextAuthOptions = {
             data: {
               email: user.email,
               name: user.name ?? user.email,
-              role: "VIEWER",
+              role: "MEMBER",
             },
           });
           console.log("[Notion OAuth] Created new user:", dbUser.email);
@@ -212,6 +212,10 @@ export const authOptions: NextAuthOptions = {
           if (u) {
             token.id = u.id;
             token.role = u.role as UserRole;
+            if (u.role === "VIEWER") {
+              await prisma.user.update({ where: { id: u.id }, data: { role: "MEMBER" } });
+              token.role = "MEMBER" as UserRole;
+            }
           }
         } catch (e) {
           console.error("[Notion OAuth] jwt refresh DB error:", e);
