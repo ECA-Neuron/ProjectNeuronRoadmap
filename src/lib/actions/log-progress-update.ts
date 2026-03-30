@@ -2,7 +2,7 @@
 
 import { requireRole } from "@/lib/auth-helpers";
 import { prisma } from "@/lib/prisma";
-import { revalidatePath } from "next/cache";
+
 import { discoverDatabase } from "@/lib/notion/discover";
 import { getNotionToken } from "@/lib/notion/client";
 
@@ -71,14 +71,33 @@ export async function logProgressUpdate(input: LogInput) {
     },
   });
 
-  // Push to Notion Progress Log database
-  try {
-    const dbInfo = await discoverDatabase(PROGRESS_LOG_DB_TITLE);
-    if (dbInfo) {
-      const token = await getNotionToken();
+  // Fire-and-forget: push to Notion in background so we return fast
+  // and don't timeout on Render waiting for Notion API calls.
+  notionPushBackground(
+    progressLog.id, subTask.name, subTask.notionPageId,
+    input, userName, todayStr,
+    workstream ? { name: workstream.name } : null,
+    deliverable ? { name: deliverable.name } : null,
+    initiative ? { name: initiative.name } : null,
+  );
 
+  return { id: progressLog.id, taskName: subTask.name };
+}
+
+function notionPushBackground(
+  logId: string, taskName: string, taskNotionId: string | null,
+  input: LogInput, userName: string, todayStr: string,
+  ws: { name: string } | null,
+  del: { name: string } | null,
+  init: { name: string } | null,
+) {
+  (async () => {
+    try {
+      const dbInfo = await discoverDatabase(PROGRESS_LOG_DB_TITLE);
+      if (!dbInfo) return;
+      const token = await getNotionToken();
       const properties: Record<string, unknown> = {
-        "ID Num": richText(subTask.name),
+        "ID Num": richText(taskName),
         "Percent Complete": richText(String(input.percentComplete)),
         "Total Points": richText(String(input.totalPoints)),
         "Current Points": richText(String(input.currentPoints)),
@@ -87,21 +106,10 @@ export async function logProgressUpdate(input: LogInput) {
         "Scheduled Dates": richText(todayStr),
         "Original or Added Scope": richText("Original"),
       };
-
-      if (workstream) {
-        properties["Workstream"] = richText(workstream.name);
-      }
-      if (deliverable) {
-        properties["Deliverable"] = richText(deliverable.name);
-      }
-      if (initiative) {
-        properties["Epic"] = richText(initiative.name);
-      }
-
-      // Link to the SubTask page in the Workstreams Roadmap via relation
-      if (subTask.notionPageId) {
-        properties["Task"] = { relation: [{ id: subTask.notionPageId }] };
-      }
+      if (ws) properties["Workstream"] = richText(ws.name);
+      if (del) properties["Deliverable"] = richText(del.name);
+      if (init) properties["Epic"] = richText(init.name);
+      if (taskNotionId) properties["Task"] = { relation: [{ id: taskNotionId }] };
 
       const res = await fetch("https://api.notion.com/v1/pages", {
         method: "POST",
@@ -110,28 +118,16 @@ export async function logProgressUpdate(input: LogInput) {
           "Notion-Version": NOTION_V,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          parent: { database_id: dbInfo.id },
-          properties,
-        }),
+        body: JSON.stringify({ parent: { database_id: dbInfo.id }, properties }),
       });
       const data = await res.json();
       if (res.ok && data.id) {
-        await prisma.progressLog.update({
-          where: { id: progressLog.id },
-          data: { notionPageId: data.id },
-        });
+        await prisma.progressLog.update({ where: { id: logId }, data: { notionPageId: data.id } });
       } else {
-        console.error("Notion progress log push failed:", data.message ?? data);
+        console.error("Notion push failed:", data.message ?? data);
       }
+    } catch (err) {
+      console.error("Background Notion push failed:", err);
     }
-  } catch (err) {
-    console.error("Failed to push progress update to Notion:", err);
-  }
-
-  revalidatePath("/burndown");
-  revalidatePath("/roadmap");
-  revalidatePath("/my-dashboard");
-  revalidatePath("/overview");
-  return { id: progressLog.id, taskName: subTask.name };
+  })();
 }
