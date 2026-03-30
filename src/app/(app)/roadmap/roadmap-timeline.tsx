@@ -882,8 +882,7 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
       setSelectedId(row.id);
       const geom = getBarGeom(row, rowIdx);
       if (geom) {
-        const { startX, endX, barW } = geom;
-        const sd = toDay(row.startDate), ed = toDay(row.endDate);
+        const { startX, endX, barW, sd, ed } = geom;
         if (sd !== null && ed !== null) {
           const resizeZone = Math.min(HANDLE_W, barW * 0.25);
           if (x >= startX - HANDLE_W && x <= startX + resizeZone) {
@@ -901,8 +900,26 @@ export function RoadmapTimeline({ workstreams, dependencies = [], people = [], c
             setResizeDrag({ vi: rowIdx, id: row.id, level: row.level, edge: "move", origStartDay: sd, origEndDay: ed, anchorX: x, currentX: x });
             return;
           }
+        } else if (sd !== null) {
+          // Only start date — allow drag-move from the bar
+          const fakeEnd = sd + 1;
+          if (x >= startX - HANDLE_W && x <= endX + HANDLE_W) {
+            e.preventDefault();
+            setResizeDrag({ vi: rowIdx, id: row.id, level: row.level, edge: "right", origStartDay: sd, origEndDay: fakeEnd, anchorX: x, currentX: x });
+            return;
+          }
+        } else if (ed !== null) {
+          // Only end date — allow drag-move from the bar
+          const fakeStart = ed - 1;
+          if (x >= startX - HANDLE_W && x <= endX + HANDLE_W) {
+            e.preventDefault();
+            setResizeDrag({ vi: rowIdx, id: row.id, level: row.level, edge: "left", origStartDay: fakeStart, origEndDay: ed, anchorX: x, currentX: x });
+            return;
+          }
         }
-      } else if (!row.startDate && !row.endDate) {
+      }
+      // No bar at all — click to create a new 7-day bar centered on click position
+      if (!geom) {
         e.preventDefault();
         const clickDay = Math.round(x / DAY_W) + minDay;
         const newStart = clickDay - 3;
