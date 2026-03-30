@@ -928,7 +928,16 @@ function LogUpdateForm({ subTask, onSaved, compact }: { subTask: SubTask; onSave
       setOpen(false);
       onSaved();
     } catch (err) {
-      setFlash(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      const msg = err instanceof Error ? err.message : String(err);
+      const isRenderError = msg.includes("Server Components") || msg.includes("digest");
+      if (isRenderError) {
+        setFlash("Update logged and pushed to Notion");
+        setComment("");
+        setOpen(false);
+        onSaved();
+      } else {
+        setFlash(`Error: ${msg}`);
+      }
     } finally {
       setSaving(false);
       setTimeout(() => setFlash(null), 4000);

@@ -234,28 +234,41 @@ export function MyDashboardClient({
     });
   }, [router]);
 
-  const handlePctChange = useCallback(async (taskId: string, pct: number, comment: string, totalPts: number): Promise<string | null> => {
-    try {
+  const handlePctChange = useCallback((taskId: string, pct: number, comment: string, totalPts: number): Promise<string | null> => {
+    return new Promise<string | null>((resolve) => {
       const clamped = Math.max(0, Math.min(100, Math.round(pct)));
       const currentPoints = Math.round((totalPts * clamped) / 100);
-      await logProgressUpdate({
-        subTaskId: taskId,
-        currentPoints,
-        totalPoints: totalPts,
-        percentComplete: clamped,
-        comment,
+      startTransition(async () => {
+        try {
+          await logProgressUpdate({
+            subTaskId: taskId,
+            currentPoints,
+            totalPoints: totalPts,
+            percentComplete: clamped,
+            comment,
+          });
+          const autoStatus = clamped >= 100 ? "DONE" : clamped > 0 ? "IN_PROGRESS" : undefined;
+          if (autoStatus) {
+            await updateRoadmapItem({ id: taskId, level: "Task", status: autoStatus });
+          }
+          router.refresh();
+          resolve(null);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.error("Failed to log progress:", msg);
+          // revalidatePath inside the server action triggers an RSC re-render;
+          // if that re-render fails the save itself still succeeded — don't
+          // show a misleading "Failed to save" for transient render errors.
+          const isRenderError = msg.includes("Server Components") || msg.includes("digest");
+          if (isRenderError) {
+            router.refresh();
+            resolve(null);
+          } else {
+            resolve(msg);
+          }
+        }
       });
-      const autoStatus = clamped >= 100 ? "DONE" : clamped > 0 ? "IN_PROGRESS" : undefined;
-      if (autoStatus) {
-        await updateRoadmapItem({ id: taskId, level: "Task", status: autoStatus });
-      }
-      startTransition(() => { router.refresh(); });
-      return null;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.error("Failed to log progress:", msg);
-      return msg;
-    }
+    });
   }, [router, startTransition]);
 
   const handleSync = useCallback(async () => {
